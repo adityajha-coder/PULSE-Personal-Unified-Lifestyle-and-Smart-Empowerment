@@ -14,6 +14,7 @@
     --accent-color: #2dd4bf; /* Teal */
     --accent-color-hover: #14b8a6;
     --accent-text: #2dd4bf;
+    --bottom-nav-bg: #161b22;
 }
 
 /* Light Theme Overrides */
@@ -29,7 +30,8 @@
     --modal-bg: #ffffff;
     --chat-ai-bg: #e5e7eb;
     --chat-bg-container: #f9fafb;
-    --text-white-override: #1f2937;
+    --text-white-override: #1f2937; /* For elements that need high contrast */
+    --bottom-nav-bg: #ffffff;
 }
 
 /* Apply variables */
@@ -38,6 +40,9 @@ body {
     background-color: var(--bg-primary);
     color: var(--text-primary);
     transition: background-color 0.3s, color 0.3s;
+    /* Extra padding at bottom for mobile nav */
+    padding-bottom: 5rem;
+    overscroll-behavior-y: none; /* Prevent pull-to-refresh on mobile apps */
 }
 
 .header-bg {
@@ -45,11 +50,20 @@ body {
     transition: background-color 0.3s;
 }
 
-/* Dynamic Accent Colors */
+/* --- Dynamic Accent Colors (Default Teal) --- */
 .accent-teal {
     color: var(--accent-text);
 }
 
+.bg-accent-teal {
+    background-color: var(--accent-color);
+}
+
+.border-accent-teal {
+    border-color: var(--accent-color);
+}
+
+/* Apply dynamic color to specific classes */
 .color-accent-text {
     color: var(--accent-text);
 }
@@ -62,13 +76,13 @@ body {
     background-color: var(--accent-color-hover);
 }
 
-/* Enhanced Card Style */
+/* Enhanced Card Style with Hover Effect and Focus Ring */
 .card {
     background-color: var(--card-bg);
     border-radius: 0.75rem;
     box-shadow: 0 4px 10px rgba(0, 0, 0, 0.15);
     transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-    border: 1px solid var(--input-border);
+    border: 1px solid var(--input-border); /* Added border for contrast */
 }
 
 .card:hover {
@@ -80,14 +94,20 @@ body {
 .view {
     display: none;
     min-height: calc(100vh - 80px);
-    padding-bottom: 5rem;
+    padding-bottom: 2rem;
 }
 
 .view.active {
     display: block;
+    animation: fadeView 0.3s ease-in-out;
 }
 
-/* Custom scrollbar */
+@keyframes fadeView {
+    from { opacity: 0; transform: translateY(5px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+/* Custom scrollbar for dark theme */
 ::-webkit-scrollbar {
     width: 8px;
 }
@@ -105,13 +125,109 @@ body {
     background: var(--text-secondary);
 }
 
-/* Chatbot fixed button */
+/* Chatbot fixed button (Desktop Only - moved up slightly to avoid bottom nav on mobile if visible) */
 .chatbot-fixed {
     position: fixed;
-    bottom: 2rem;
+    bottom: 6rem; /* Raised for bottom nav */
     right: 2rem;
-    z-index: 50;
+    z-index: 40;
     cursor: pointer;
+    display: none; /* Hidden by default, shown on login */
+}
+
+/* FAB - Floating Action Button Styles (Enhanced) */
+.fab-container {
+    position: fixed;
+    bottom: 6rem;
+    left: 2rem;
+    z-index: 50; /* Ensure high z-index */
+    display: none; /* Hidden by default */
+    flex-direction: column-reverse;
+    align-items: center;
+    gap: 1rem;
+}
+
+.fab-main {
+    width: 3.5rem;
+    height: 3.5rem;
+    border-radius: 50%;
+    background-color: var(--accent-color);
+    color: black;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.4);
+    cursor: pointer;
+    transition: transform 0.2s, background-color 0.2s;
+}
+
+.fab-main:active {
+    transform: scale(0.95);
+}
+
+.fab-menu {
+    display: flex;
+    flex-direction: column-reverse;
+    gap: 0.75rem;
+    opacity: 0;
+    visibility: hidden; /* Use visibility for better a11y hiding */
+    pointer-events: none;
+    transform: translateY(10px) scale(0.9);
+    transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.fab-menu.active {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+    transform: translateY(0) scale(1);
+}
+
+.fab-item {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.fab-label {
+    background-color: var(--card-bg);
+    padding: 0.4rem 0.8rem;
+    border-radius: 0.5rem;
+    font-size: 0.875rem;
+    font-weight: 600;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+    border: 1px solid var(--input-border);
+    color: var(--text-primary);
+    white-space: nowrap;
+}
+
+.fab-btn {
+    width: 3rem;
+    height: 3rem;
+    border-radius: 50%;
+    background-color: var(--card-hover-bg);
+    color: var(--text-primary);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    box-shadow: 0 3px 10px rgba(0,0,0,0.3);
+    transition: background-color 0.2s, transform 0.2s;
+    border: 1px solid var(--input-border);
+}
+
+.fab-btn:hover {
+    background-color: var(--accent-color);
+    color: black;
+    transform: scale(1.05);
+}
+
+@media (min-width: 768px) {
+    .chatbot-fixed {
+        bottom: 2rem;
+    }
+    .fab-container {
+        bottom: 2rem;
+    }
 }
 
 /* Modal Backdrop */
@@ -121,7 +237,8 @@ body {
     left: 0;
     width: 100%;
     height: 100%;
-    background-color: rgba(0, 0, 0, 0.9);
+    background-color: rgba(0, 0, 0, 0.85); /* Slightly darker backdrop */
+    backdrop-filter: blur(4px); /* Blur effect */
     display: none;
     justify-content: center;
     align-items: center;
@@ -130,23 +247,26 @@ body {
 
 .modal-content {
     background-color: var(--modal-bg);
-    border-radius: 0.75rem;
+    border-radius: 1rem;
     max-width: 90%;
     width: 450px;
     padding: 1.5rem;
-    box-shadow: 0 15px 35px rgba(0, 0, 0, 0.7);
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
     color: var(--text-primary);
-    animation: fadeIn 0.3s ease-out;
+    animation: fadeIn 0.3s cubic-bezier(0.16, 1, 0.3, 1);
     transition: background-color 0.3s, color 0.3s;
+    border: 1px solid var(--input-border);
+    max-height: 90vh;
+    overflow-y: auto;
 }
 
 /* Loading spinner */
 .loader {
-    border: 4px solid rgba(255, 255, 255, 0.3);
+    border: 4px solid rgba(255, 255, 255, 0.1);
     border-top: 4px solid var(--accent-color);
     border-radius: 50%;
-    width: 30px;
-    height: 30px;
+    width: 40px;
+    height: 40px;
     animation: spin 1s linear infinite;
 }
 
@@ -163,16 +283,15 @@ body {
 @keyframes fadeIn {
     from {
         opacity: 0;
-        transform: translateY(-20px);
+        transform: scale(0.95);
     }
-
     to {
         opacity: 1;
-        transform: translateY(0);
+        transform: scale(1);
     }
 }
 
-/* Chat view styles */
+/* Chat view styles - ENHANCED HEIGHT */
 .chat-container {
     height: 65vh; 
     overflow-y: auto;
@@ -194,7 +313,7 @@ body {
 
 .user-bubble {
     background-color: var(--accent-color);
-    color: black;
+    color: black; /* Always black text on accent background for contrast */
     padding: 0.6rem 1rem;
     border-radius: 1.2rem 1.2rem 0.4rem 1.2rem;
     max-width: 75%;
@@ -219,19 +338,10 @@ body {
     max-width: fit-content;
 }
 
-/* Keyframe for subtle border animation */
 @keyframes pulse-border {
-    0% {
-        border-color: #2dd4bf30;
-    }
-
-    50% {
-        border-color: #2dd4bf70;
-    }
-
-    100% {
-        border-color: #2dd4bf30;
-    }
+    0% { border-color: #2dd4bf30; }
+    50% { border-color: #2dd4bf70; }
+    100% { border-color: #2dd4bf30; }
 }
 
 .animated-border-card {
@@ -255,6 +365,7 @@ body {
 .input-group textarea:focus {
     border-color: var(--accent-color);
     box-shadow: 0 0 0 1px var(--accent-color);
+    outline: none;
 }
 
 .input-group i {
@@ -266,7 +377,6 @@ body {
     z-index: 10;
 }
 
-/* Adjust icon position for labels/selects where 50% doesn't work well */
 .input-group label+i {
     top: calc(50% + 0.5rem);
 }
@@ -275,12 +385,11 @@ body {
     top: calc(50% + 0.5rem);
 }
 
-/* Responsive adjustments for Dashboard Score Breakdown */
 .score-item {
     padding: 0.75rem;
     border-radius: 0.5rem;
     text-align: center;
-    background-color: var(--card-hover-bg);
+    background-color: var(--card-hover-bg); 
     transition: background-color 0.3s;
 }
 
@@ -290,36 +399,10 @@ body {
     }
 }
 
-/* Activity Dot Pulse Animation */
-@keyframes activity-pulse {
-    0% {
-        box-shadow: 0 0 0 0 rgba(45, 212, 191, 0.7);
-    }
-
-    70% {
-        box-shadow: 0 0 0 8px rgba(45, 212, 191, 0);
-    }
-
-    100% {
-        box-shadow: 0 0 0 0 rgba(45, 212, 191, 0);
-    }
-}
-
-.activity-dot {
-    width: 8px;
-    height: 8px;
-    background-color: var(--accent-color);
-    border-radius: 50%;
-    animation: activity-pulse 2s infinite;
-    margin-right: 8px;
-}
-
-/* Tool Card Minimum Height for consistent grid look */
 .tool-card {
     min-height: 180px;
 }
 
-/* Voice recognition active state */
 .mic-active {
     background-color: #f87171 !important;
     color: black !important;
@@ -327,29 +410,80 @@ body {
     transform: scale(1.1);
 }
 
+/* Bottom Nav Styles */
+.bottom-nav {
+    background-color: var(--bottom-nav-bg);
+    border-top: 1px solid var(--input-border);
+    padding-bottom: env(safe-area-inset-bottom);
+}
+
+.nav-item.active {
+    color: var(--accent-color);
+}
+
+/* Video Consultation UI */
+.video-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 1rem;
+    height: calc(100vh - 200px);
+    background: #000;
+    border-radius: 1rem;
+    padding: 1rem;
+    position: relative;
+    overflow: hidden;
+}
+
+.video-participant {
+    background-color: #1f2937;
+    border-radius: 0.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    height: 100%;
+    overflow: hidden;
+}
+
+.video-self {
+    position: absolute;
+    bottom: 2rem;
+    right: 2rem;
+    width: 150px;
+    height: 100px;
+    border-radius: 0.5rem;
+    border: 2px solid var(--accent-color);
+    background-color: #374151;
+    z-index: 10;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+}
+
+.video-controls {
+    position: absolute;
+    bottom: 1rem;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 1rem;
+    background-color: rgba(31, 41, 55, 0.8);
+    padding: 0.5rem 1.5rem;
+    border-radius: 2rem;
+    backdrop-filter: blur(4px);
+}
+
 /* Text color overrides for compatibility with dynamic theme colors */
-[data-theme="light"] .text-white {
-    color: var(--text-primary) !important;
+[data-theme="light"] .text-white { color: var(--text-primary) !important; }
+[data-theme="light"] .text-gray-400 { color: var(--text-secondary) !important; }
+[data-theme="light"] .bg-gray-700 { background-color: var(--card-hover-bg) !important; color: var(--text-primary) !important; }
+[data-theme="light"] .hover\:bg-gray-700:hover { background-color: var(--card-hover-bg) !important; }
+[data-theme="light"] .bg-gray-800 { background-color: #f3f4f6 !important; color: var(--text-primary) !important; }
+[data-theme="light"] .border-gray-700 { border-color: var(--input-border) !important; }
+
+/* Hidden Class for Protected Routes */
+.protected-nav-item {
+    display: none;
 }
 
-[data-theme="light"] .text-gray-400 {
-    color: var(--text-secondary) !important;
-}
-
-[data-theme="light"] .bg-gray-700 {
-    background-color: var(--card-hover-bg) !important;
-    color: var(--text-primary) !important;
-}
-
-[data-theme="light"] .hover\:bg-gray-700:hover {
-    background-color: var(--card-hover-bg) !important;
-}
-
-[data-theme="light"] .bg-gray-800 {
-    background-color: #f3f4f6 !important;
-    color: var(--text-primary) !important;
-}
-
-[data-theme="light"] .border-gray-700 {
-    border-color: var(--input-border) !important;
+.protected-nav-item.visible {
+    display: block;
 }
