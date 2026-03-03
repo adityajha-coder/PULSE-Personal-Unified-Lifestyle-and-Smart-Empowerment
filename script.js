@@ -1,26 +1,73 @@
-// =======================================================
-// 1. GLOBAL STATE & DATA DECLARATIONS
-// =======================================================
-
+// Global variables and setup
 let isLoggedIn = false;
 let loggedInUser = '';
 let plannerChartInstance = null;
 let dashboardChartInstance = null;
 let currentTheme = 'dark';
+let timerInterval = null;
 
-const mockGoals = [
+// PWA Install Prompt Logic
+let deferredPrompt;
+window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    deferredPrompt = e;
+    const installBtn = document.getElementById('pwa-install-container');
+    if(installBtn) installBtn.classList.remove('hidden');
+});
+
+async function installApp() {
+    if (deferredPrompt) {
+        deferredPrompt.prompt();
+        const { outcome } = await deferredPrompt.userChoice;
+        deferredPrompt = null;
+        if(outcome === 'accepted') {
+                document.getElementById('pwa-install-container').classList.add('hidden');
+        }
+    } else {
+        showModal('Install PULSE', 'To install PULSE, tap "Share" then "Add to Home Screen" on iOS, or use the "Install App" option in your browser menu on Android/Desktop.', 'Got it');
+    }
+}
+
+// Service Worker Registration
+if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+        // Register using relative path to handle subdirectories/GitHub Pages better
+        navigator.serviceWorker.register('service-worker.js')
+            .then((reg) => console.log('Service Worker Registered'))
+            .catch((err) => console.log('Service Worker Failed', err));
+    });
+}
+
+// Initial Mock Data (Will be overwritten by localStorage if available)
+let mockGoals = [
     { id: 1, name: "Daily Steps (10,000)", target: 10000, current: 7500, type: "Activity" },
     { id: 2, name: "Sleep Avg (8 hours)", target: 8, current: 8.25, type: "Sleep" },
     { id: 3, name: "Strength Training (3x/wk)", target: 3, current: 2, type: "Workout" },
 ];
 let nextGoalId = 4;
 
-let mockActivities = [
-    { id: 1, metric: "STEPS", value: 15000, date: new Date().toLocaleDateString(), type: "Activity" },
-    { id: 2, metric: "SLEEP", value: "8 hours", date: new Date(Date.now() - 86400000).toLocaleDateString(), type: "Sleep" },
-    { id: 3, metric: "BP", value: "130/85", date: new Date(Date.now() - 2 * 86400000).toLocaleDateString(), type: "Health" },
-];
-let nextActivityId = 4;
+// Indian Date Format
+const getIndianDate = (date = new Date()) => {
+    return date.toLocaleDateString('en-IN', {
+        day: '2-digit', month: '2-digit', year: 'numeric'
+    }); // dd/mm/yyyy
+};
+
+// Seed some history for the chart to look good initially if localstorage is empty
+const generateSeedData = () => {
+        const seed = [];
+        for(let i=0; i<7; i++) {
+            const d = new Date();
+            d.setDate(d.getDate() - i);
+            const dateStr = getIndianDate(d);
+            seed.push({ id: 1000+i, metric: "STEPS", value: Math.floor(Math.random() * 5000) + 5000, date: dateStr, type: "Activity" });
+            seed.push({ id: 2000+i, metric: "SLEEP", value: (Math.random() * 2 + 6).toFixed(1) + " hours", date: dateStr, type: "Sleep" });
+        }
+        return seed.reverse();
+};
+
+let mockActivities = [];
+let nextActivityId = 3000;
 
 let mockMedications = [
     { id: 101, name: "Metformin (500mg)", schedule: "8:00 AM Daily", status: "Active", adherence: 88, nextDose: "8:00 AM", dosage: "500mg", frequency: "Daily" },
@@ -60,12 +107,39 @@ let isListening = false;
 let recognition = null;
 let base64ImageFile = null;
 
-// =======================================================
-// 2. GLOBALLY ACCESSED FUNCTIONS
-// =======================================================
+/* --- LocalStorage Implementation --- */
+function saveData() {
+    localStorage.setItem('pulse_activities', JSON.stringify(mockActivities));
+    localStorage.setItem('pulse_goals', JSON.stringify(mockGoals));
+    localStorage.setItem('pulse_medications', JSON.stringify(mockMedications));
+    localStorage.setItem('pulse_scores', JSON.stringify(healthScores));
+    localStorage.setItem('pulse_user', loggedInUser);
+    localStorage.setItem('pulse_isLoggedIn', isLoggedIn);
+    console.log("Data saved to localStorage");
+}
 
-function toggleMobileMenu() {
-    document.getElementById('mobile-menu').classList.toggle('hidden');
+function loadData() {
+    if(localStorage.getItem('pulse_activities')) {
+        mockActivities = JSON.parse(localStorage.getItem('pulse_activities'));
+        // Determine next ID
+        if(mockActivities.length > 0) nextActivityId = Math.max(...mockActivities.map(a => a.id)) + 1;
+    } else {
+        mockActivities = generateSeedData();
+    }
+
+    if(localStorage.getItem('pulse_goals')) {
+        mockGoals = JSON.parse(localStorage.getItem('pulse_goals'));
+        if(mockGoals.length > 0) nextGoalId = Math.max(...mockGoals.map(g => g.id)) + 1;
+    }
+
+    if(localStorage.getItem('pulse_medications')) {
+        mockMedications = JSON.parse(localStorage.getItem('pulse_medications'));
+        if(mockMedications.length > 0) nextMedicationId = Math.max(...mockMedications.map(m => m.id)) + 1;
+    }
+
+    if(localStorage.getItem('pulse_scores')) healthScores = JSON.parse(localStorage.getItem('pulse_scores'));
+    if(localStorage.getItem('pulse_user')) loggedInUser = localStorage.getItem('pulse_user');
+    if(localStorage.getItem('pulse_isLoggedIn')) isLoggedIn = localStorage.getItem('pulse_isLoggedIn') === 'true';
 }
 
 function showAuthModal(mode = 'login') {
@@ -81,7 +155,6 @@ function hideAuthModal() {
 
 function switchAuthMode(event, mode) {
     if (event) event.preventDefault();
-
     const loginForm = document.getElementById('login-form');
     const signupForm = document.getElementById('signup-form');
     const title = document.getElementById('auth-title');
@@ -107,6 +180,7 @@ function switchAuthMode(event, mode) {
 function signOutUser() {
     isLoggedIn = false;
     loggedInUser = '';
+    saveData(); // Save logout state
     updateHeaderAuthDisplay();
     showView('home');
     showModal('Signed Out', 'You have successfully signed out. Your dashboard data is now protected.', 'Login Again');
@@ -137,18 +211,14 @@ function showMentalHealthCrisisModal() {
     document.getElementById('universal-modal-content').innerHTML = content;
     document.getElementById('universal-modal-content').classList.remove('modal-lg');
     document.getElementById('universal-modal-backdrop').style.display = 'flex';
-    if (typeof lucide !== 'undefined') { lucide.createIcons(); }
+    if (typeof lucide !== 'undefined') lucide.createIcons();
 }
-
-// =======================================================
-// 3. REMAINING FUNCTIONS
-// =======================================================
 
 function fileToBase64(file) {
     return new Promise((resolve, reject) => {
         const reader = new FileReader();
         reader.readAsDataURL(file);
-        reader.onload = () => resolve(reader.result.split(',')[1]);
+        reader.onload = () => resolve(reader.result.split(',')[1]); 
         reader.onerror = error => reject(error);
     });
 }
@@ -157,17 +227,11 @@ async function fetchWithRetry(url, options, retries = 3) {
     for (let i = 0; i < retries; i++) {
         try {
             const response = await fetch(url, options);
-            if (response.ok) {
-                return response.json();
-            }
-            if (response.status === 429) {
-                throw new Error(`Rate limit exceeded. Retrying in ${2 ** i}s...`);
-            }
+            if (response.ok) return response.json();
+            if (response.status === 429) throw new Error(`Rate limit exceeded. Retrying in ${2 ** i}s...`);
             throw new Error(`API error: ${response.statusText}`);
         } catch (error) {
-            if (i === retries - 1) {
-                throw error;
-            }
+            if (i === retries - 1) throw error;
             const delay = 2 ** i * 1000;
             await new Promise(resolve => setTimeout(resolve, delay));
         }
@@ -176,21 +240,45 @@ async function fetchWithRetry(url, options, retries = 3) {
 
 function updateHeaderAuthDisplay() {
     const authButtons = document.getElementById('auth-buttons');
+    const mobileLoginBtn = document.getElementById('mobile-login-btn');
     const userInfo = document.getElementById('user-info');
     const userGreeting = document.getElementById('user-greeting');
     const homeTeaser = document.getElementById('home-wellness-teaser');
+    
+    // Elements to toggle based on auth
+    const desktopProtectedNav = document.getElementById('desktop-protected-nav');
+    const mobileProtectedItems = document.querySelectorAll('.protected-nav-item');
+    const chatbotFixedBtn = document.getElementById('chatbot-fixed-btn');
+    const desktopDeviceBtn = document.getElementById('desktop-device-btn');
 
     if (isLoggedIn) {
         authButtons.classList.add('hidden');
+        if(mobileLoginBtn) mobileLoginBtn.parentElement.classList.add('hidden');
         userInfo.classList.remove('hidden');
         userInfo.classList.add('flex');
-        userGreeting.textContent = `Welcome Back!`;
+        userGreeting.textContent = `Welcome Back!`; 
         homeTeaser.style.display = 'inline-block';
+        
+        // Show Protected Nav & Tools
+        desktopProtectedNav.classList.remove('hidden');
+        desktopProtectedNav.classList.add('flex');
+        mobileProtectedItems.forEach(el => el.classList.add('visible'));
+        chatbotFixedBtn.style.display = 'block';
+        desktopDeviceBtn.classList.remove('hidden');
+
     } else {
         authButtons.classList.remove('hidden');
+        if(mobileLoginBtn) mobileLoginBtn.parentElement.classList.remove('hidden');
         userInfo.classList.add('hidden');
         userInfo.classList.remove('flex');
         homeTeaser.style.display = 'none';
+        
+        // Hide Protected Nav & Tools
+        desktopProtectedNav.classList.add('hidden');
+        desktopProtectedNav.classList.remove('flex');
+        mobileProtectedItems.forEach(el => el.classList.remove('visible'));
+        chatbotFixedBtn.style.display = 'none';
+        desktopDeviceBtn.classList.add('hidden');
     }
     if (typeof lucide !== 'undefined') { lucide.createIcons(); }
 }
@@ -198,27 +286,14 @@ function updateHeaderAuthDisplay() {
 function applyAccentColor(colorName) {
     let color, hover;
     switch (colorName) {
-        case 'Teal':
-            color = '#2dd4bf';
-            hover = '#14b8a6';
-            break;
-        case 'Indigo':
-            color = '#818cf8';
-            hover = '#6366f1';
-            break;
-        case 'Pink':
-            color = '#f472b6';
-            hover = '#ec4899';
-            break;
-        default:
-            color = '#2dd4bf';
-            hover = '#14b8a6';
+        case 'Teal': color = '#2dd4bf'; hover = '#14b8a6'; break;
+        case 'Indigo': color = '#818cf8'; hover = '#6366f1'; break;
+        case 'Pink': color = '#f472b6'; hover = '#ec4899'; break;
+        default: color = '#2dd4bf'; hover = '#14b8a6';
     }
-
     document.documentElement.style.setProperty('--accent-color', color);
     document.documentElement.style.setProperty('--accent-color-hover', hover);
     document.documentElement.style.setProperty('--accent-text', color);
-
     if (dashboardChartInstance) renderDashboardChart();
     if (plannerChartInstance) renderPlannerChart(document.getElementById('planner-title').textContent.includes('Nutrition') ? 'Nutrition' : 'Workout');
 }
@@ -228,58 +303,72 @@ function toggleTheme() {
     currentTheme = html.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
     html.setAttribute('data-theme', currentTheme);
     localStorage.setItem('theme', currentTheme);
-
     if (dashboardChartInstance) renderDashboardChart();
     if (plannerChartInstance) renderPlannerChart(document.getElementById('planner-title').textContent.includes('Nutrition') ? 'Nutrition' : 'Workout');
-
     hideModal();
     showModal('Theme Switched', `Theme changed to **${currentTheme.toUpperCase()}** mode.`, 'OK');
 }
 
+// FAB LOGIC (Refined)
+function toggleFabMenu() {
+    const menu = document.getElementById('fab-menu');
+    const icon = document.getElementById('fab-icon');
+    menu.classList.toggle('active');
+    if(menu.classList.contains('active')) {
+        icon.style.transform = 'rotate(45deg)';
+    } else {
+        icon.style.transform = 'rotate(0deg)';
+    }
+}
+
+// Close FAB when clicking outside
+document.addEventListener('click', function(event) {
+    const fabContainer = document.getElementById('fab-container');
+    const menu = document.getElementById('fab-menu');
+    const fabMainBtn = document.getElementById('fab-main-btn');
+    
+    if (fabContainer && !fabContainer.contains(event.target) && menu.classList.contains('active')) {
+        toggleFabMenu();
+    }
+    // Close if clicking an item
+        if (menu && menu.contains(event.target) && menu.classList.contains('active')) {
+        // Don't close immediately to allow click to register, but the button handlers often call toggleFabMenu anyway
+    }
+});
+
 window.onload = () => {
+    loadData(); // Load persistence
+    
     const savedTheme = localStorage.getItem('theme') || 'dark';
     document.documentElement.setAttribute('data-theme', savedTheme);
     currentTheme = savedTheme;
-
-    if (typeof lucide !== 'undefined') {
-        lucide.createIcons();
-    }
+    
+    if (typeof lucide !== 'undefined') lucide.createIcons();
     updateHeaderAuthDisplay();
     applyAccentColor('Teal');
-
+    
     if ('webkitSpeechRecognition' in window) {
         recognition = new webkitSpeechRecognition();
         recognition.continuous = false;
         recognition.interimResults = false;
-        recognition.lang = 'en-US';
+        recognition.lang = 'en-IN'; // Set to Indian English
 
-        recognition.onstart = () => {
-            const micButton = document.getElementById('mic-button');
-            if (micButton) micButton.classList.add('mic-active');
-        };
-
+        recognition.onstart = () => document.getElementById('mic-button')?.classList.add('mic-active');
         recognition.onresult = (event) => {
             const transcript = event.results[0][0].transcript;
             document.getElementById('chat-input').value = transcript;
             sendChat(null, transcript);
         };
-
         recognition.onend = () => {
-            const micButton = document.getElementById('mic-button');
-            if (micButton) micButton.classList.remove('mic-active');
+            document.getElementById('mic-button')?.classList.remove('mic-active');
             isListening = false;
         };
-
         recognition.onerror = (event) => {
-            const micButton = document.getElementById('mic-button');
-            if (micButton) micButton.classList.remove('mic-active');
+            document.getElementById('mic-button')?.classList.remove('mic-active');
             isListening = false;
             console.error("Speech recognition error:", event.error);
-            showModal('Voice Error', `Speech recognition failed: ${event.error}. Please ensure your microphone is enabled.`, 'OK');
         };
-
     } else {
-        console.warn("Web Speech API not supported in this browser.");
         const micButton = document.getElementById('mic-button');
         if (micButton) micButton.disabled = true;
     }
@@ -287,10 +376,9 @@ window.onload = () => {
 
 function toggleVoiceInput() {
     if (!recognition) {
-         showModal('Voice Unavailable', 'Your browser does not support the Web Speech API required for voice chat.', 'OK');
-         return;
+            showModal('Voice Unavailable', 'Your browser does not support the Web Speech API required for voice chat.', 'OK');
+            return;
     }
-
     if (isListening) {
         recognition.stop();
     } else {
@@ -310,12 +398,8 @@ function handleImageUpload(event) {
     if (file) {
         fileToBase64(file).then(base64Data => {
             base64ImageFile = base64Data;
-            event.target.value = null;
-            showModal(
-                'Image Ready for AI',
-                `Image uploaded successfully! Please type your question or request (e.g., "Analyze this meal for calorie estimate" or "What is this plant?") and hit send. The image will be included with your text.`,
-                'Got It'
-            );
+            event.target.value = null; 
+            showModal('Image Ready for AI', `Image uploaded successfully! Please type your question.`, 'Got It');
         }).catch(error => {
             console.error("Image processing error:", error);
             showModal('Upload Failed', 'Could not process the image file. Please try again.', 'OK');
@@ -327,14 +411,16 @@ function calculateAndRenderScores() {
     const totalSteps = mockActivities
         .filter(a => a.metric === 'STEPS')
         .reduce((sum, a) => sum + (parseInt(a.value) || 0), 0);
+    
+    // Basic logic: if totalSteps in history > 50k (just a seed check), high score, etc.
+    // Actually, let's calc daily avg roughly
+    let newActivityScore = Math.min(100, 60 + Math.floor(totalSteps / 3000)); // Arbitrary calc
 
-    let newActivityScore = Math.min(100, 85 + Math.floor(totalSteps / 10000));
     const mindfulCount = mockActivities.filter(a => a.metric === 'MEDITATION').length;
     let newStressScore = Math.min(100, 79 + (mindfulCount * 5));
 
     healthScores.activity = newActivityScore;
     healthScores.stress = newStressScore;
-
     const totalScore = (healthScores.activity + healthScores.sleep + healthScores.stress + healthScores.nutrition) / 4;
     const roundedScore = Math.round(totalScore);
 
@@ -343,45 +429,26 @@ function calculateAndRenderScores() {
     document.getElementById('score-sleep').textContent = healthScores.sleep;
     document.getElementById('score-stress').textContent = healthScores.stress;
     document.getElementById('score-nutrition').textContent = healthScores.nutrition;
-
     document.getElementById('home-score-display').textContent = `${roundedScore}/100`;
 
-    renderGoalsAndActivities();
+    saveData(); // Save computed scores
+    renderGoals(); 
     renderDashboardChart();
 }
 
-function checkAuthAndShowDashboard() {
-    const content = document.getElementById('dashboard-content');
-    const prompt = document.getElementById('dashboard-auth-prompt');
-
-    if (isLoggedIn) {
-        prompt.classList.add('hidden');
-        content.classList.remove('hidden');
-        setTimeout(() => {
-            calculateAndRenderScores();
-        }, 100);
-    } else {
-        content.classList.add('hidden');
-        prompt.classList.remove('hidden');
-        if (dashboardChartInstance) dashboardChartInstance.destroy();
-    }
-    if (typeof lucide !== 'undefined') { lucide.createIcons(); }
-}
-
-function renderGoalsAndActivities() {
-    const goalsContainer = document.querySelector('#dashboard-content .card:nth-child(2) .space-y-4');
+// Updated function: Only renders goals, activity feed logic removed
+function renderGoals() {
+    const goalsContainer = document.getElementById('dashboard-goals-container');
     if (goalsContainer) {
         goalsContainer.innerHTML = mockGoals.map(goal => {
             const percentage = (goal.current / goal.target) * 100;
             const width = Math.min(100, percentage);
             const color = percentage >= 100 ? 'bg-green-500' : 'color-bg-accent';
-            const textColor = 'color-accent-text';
-
             return `
                 <div>
                     <div class="flex justify-between items-center text-sm mb-1">
                         <span class="font-medium" style="color: var(--text-primary);">${goal.name}</span>
-                        <span class="${textColor} font-bold">${goal.type === 'Sleep' ? `${goal.current}h 15m` : `${Math.floor(percentage)}%`}</span>
+                        <span class="color-accent-text font-bold">${goal.type === 'Sleep' ? `${goal.current}h` : `${Math.floor(percentage)}%`}</span>
                     </div>
                     <div class="w-full bg-gray-700 rounded-full h-2.5">
                         <div class="${color} h-2.5 rounded-full transition-all duration-500" style="width: ${width}%"></div>
@@ -390,160 +457,79 @@ function renderGoalsAndActivities() {
             `;
         }).join('');
     }
+    if (typeof lucide !== 'undefined') lucide.createIcons();
+}
 
-    const activityFeed = document.querySelector('#dashboard-content .card:nth-child(3) ul.space-y-3');
-    if (activityFeed) {
-        activityFeed.innerHTML = mockActivities.slice().reverse().slice(0, 3).map(activity => {
-            let icon, label, time, color;
+// --- DYNAMIC CHART DATA LOGIC ---
+function getRecent7DaysData() {
+    const days = [];
+    const stepCounts = [];
+    const sleepScores = [];
+    
+    // Generate last 7 days dates
+    for (let i = 6; i >= 0; i--) {
+        const d = new Date();
+        d.setDate(d.getDate() - i);
+        const dateStr = getIndianDate(d);
+        // Label: Mon, Tue etc.
+        const dayLabel = d.toLocaleDateString('en-US', { weekday: 'short' }); 
+        
+        days.push(dayLabel);
 
-            if (activity.metric === 'STEPS') {
-                icon = 'footprints';
-                label = `Logged ${activity.metric} count: ${activity.value}.`;
-                time = '4 hours ago';
-                color = 'text-green-400';
-            } else if (activity.metric === 'WEIGHT') {
-                icon = 'scale';
-                label = `Logged ${activity.metric}: ${activity.value} kg.`;
-                time = '5 hours ago';
-                color = 'text-yellow-400';
-            } else if (activity.metric === 'SLEEP') {
-                icon = 'moon';
-                label = `Logged ${activity.metric}: ${activity.value}.`;
-                time = '4 hours ago';
-                color = 'text-indigo-400';
-            } else if (activity.metric === 'BP') {
-                icon = 'heart-pulse';
-                label = `Logged ${activity.metric}: ${activity.value}.`;
-                time = 'Yesterday';
-                color = 'text-red-400';
-            } else if (activity.metric === 'MEDITATION') {
-                icon = 'lotus';
-                label = `Logged ${activity.metric} session: ${activity.value}.`;
-                time = 'Just Now';
-                color = 'text-pink-400';
-            } else if (activity.metric === 'NUTRITION' || activity.metric === 'WORKOUT') {
-                icon = activity.metric === 'NUTRITION' ? 'apple' : 'dumbbell';
-                label = `Logged ${activity.metric} entry: ${activity.value}.`;
-                time = 'Just Now';
-                color = 'color-accent-text';
-            } else {
-                icon = 'bolt';
-                label = `Logged ${activity.metric}: ${activity.value}.`;
-                time = 'Just Now';
-                color = 'text-white';
-            }
-
-            return `
-                <li class="flex items-center space-x-3 text-sm">
-                    <i data-lucide="${icon}" class="w-5 h-5 ${color}"></i>
-                    <span class="flex-1" style="color: var(--text-primary);">${label}</span>
-                    <span class="text-xs text-gray-400">${time}</span>
-                </li>
-            `;
-        }).join('');
-    }
-
-    const activityDot = document.getElementById('activity-dot');
-    if (activityDot) {
-        if (mockActivities.length > 3 || hasNewActivity) {
-            activityDot.classList.remove('hidden');
-            activityDot.classList.add('activity-dot');
-        } else {
-            activityDot.classList.add('hidden');
-            activityDot.classList.remove('activity-dot');
+        // Filter steps for this specific day string
+        const stepsSum = mockActivities
+            .filter(a => (a.metric === 'STEPS' || a.metric === 'Steps') && a.date === dateStr)
+            .reduce((sum, a) => sum + parseInt(a.value), 0);
+        
+        // Filter sleep for this day
+        // Trying to parse "X hours" or just X
+        const sleepEntry = mockActivities
+            .find(a => (a.metric === 'SLEEP' || a.metric === 'Sleep') && a.date === dateStr);
+        
+        let sleepVal = 70; // Default baseline if no data
+        if(sleepEntry) {
+            const val = parseFloat(sleepEntry.value);
+            if(!isNaN(val)) sleepVal = Math.min(100, val * 10); // Simple mapping: 8hr -> 80%
         }
+
+        stepCounts.push(stepsSum / 1000); // Scale steps to match Y-axis format (x1000)
+        sleepScores.push(sleepVal);
     }
-
-
-    if (typeof lucide !== 'undefined') { lucide.createIcons(); }
+    return { days, stepCounts, sleepScores };
 }
 
 function renderDashboardChart() {
     const ctx = document.getElementById('weeklyPerformanceChart');
     if (!ctx) return;
-
-    if (dashboardChartInstance) {
-        dashboardChartInstance.destroy();
-        dashboardChartInstance = null;
-    }
-
+    if (dashboardChartInstance) { dashboardChartInstance.destroy(); dashboardChartInstance = null; }
     const accentColor = getComputedStyle(document.documentElement).getPropertyValue('--accent-color');
     const textColor = getComputedStyle(document.documentElement).getPropertyValue('--text-primary');
     const gridColor = currentTheme === 'dark' ? '#2d333b' : '#e5e7eb';
 
+    const { days, stepCounts, sleepScores } = getRecent7DaysData();
 
     const data = {
-        labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
+        labels: days,
         datasets: [
-            {
-                label: 'Steps (x1000)',
-                data: [8, 12, 10, 15, 9, 11, 14],
-                backgroundColor: accentColor,
-                borderColor: accentColor,
-                yAxisID: 'y',
-                tension: 0.3,
-                type: 'bar',
-                borderRadius: 5
-            },
-            {
-                label: 'Sleep Quality (%)',
-                data: [85, 90, 80, 75, 95, 88, 92],
-                backgroundColor: '#a78bfa',
-                borderColor: '#a78bfa',
-                yAxisID: 'y1',
-                tension: 0.4,
-                pointRadius: 5,
-                type: 'line'
-            }
+            { label: 'Steps (x1000)', data: stepCounts, backgroundColor: accentColor, borderColor: accentColor, yAxisID: 'y', tension: 0.3, type: 'bar', borderRadius: 5 },
+            { label: 'Sleep Quality (%)', data: sleepScores, backgroundColor: '#a78bfa', borderColor: '#a78bfa', yAxisID: 'y1', tension: 0.4, pointRadius: 5, type: 'line' }
         ]
     };
 
     dashboardChartInstance = new Chart(ctx, {
-        type: 'line',
-        data: data,
+        type: 'line', data: data,
         options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            interaction: {
-                mode: 'index',
-                intersect: false,
-            },
+            responsive: true, maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
             scales: {
-                y: {
-                    type: 'linear',
-                    display: true,
-                    position: 'left',
-                    title: { display: true, text: 'Steps (x1000)', color: accentColor },
-                    grid: { color: gridColor },
-                    ticks: { color: textColor }
-                },
-                y1: {
-                    type: 'linear',
-                    display: true,
-                    position: 'right',
-                    title: { display: true, text: 'Sleep Quality (%)', color: '#a78bfa' },
-                    grid: { drawOnChartArea: false, color: gridColor },
-                    ticks: { color: textColor }
-                },
-                x: {
-                    grid: { display: false },
-                    ticks: { color: textColor }
-                }
+                y: { type: 'linear', display: true, position: 'left', title: { display: true, text: 'Steps (x1000)', color: accentColor }, grid: { color: gridColor }, ticks: { color: textColor } },
+                y1: { type: 'linear', display: true, position: 'right', title: { display: true, text: 'Sleep Quality (%)', color: '#a78bfa' }, grid: { drawOnChartArea: false, color: gridColor }, ticks: { color: textColor } },
+                x: { grid: { display: false }, ticks: { color: textColor } }
             },
             plugins: {
                 legend: { labels: { color: textColor } },
-                tooltip: {
-                    backgroundColor: currentTheme === 'dark' ? '#1f2937' : '#ffffff',
-                    titleColor: currentTheme === 'dark' ? '#fff' : '#1f2937',
-                    bodyColor: textColor,
-                    borderColor: accentColor,
-                    borderWidth: 1
-                },
-                title: {
-                    display: true,
-                    text: 'Weekly Health Trend',
-                    color: textColor
-                }
+                tooltip: { backgroundColor: currentTheme === 'dark' ? '#1f2937' : '#ffffff', titleColor: currentTheme === 'dark' ? '#fff' : '#1f2937', bodyColor: textColor, borderColor: accentColor, borderWidth: 1 },
+                title: { display: true, text: 'Weekly Health Trend (Last 7 Days)', color: textColor }
             }
         },
     });
@@ -552,86 +538,31 @@ function renderDashboardChart() {
 function renderPlannerChart(plannerType) {
     const ctx = document.getElementById('longTermChart');
     if (!ctx) return;
-
-    if (plannerChartInstance) {
-        plannerChartInstance.destroy();
-        plannerChartInstance = null;
-    }
-
+    if (plannerChartInstance) { plannerChartInstance.destroy(); plannerChartInstance = null; }
     const accentColor = getComputedStyle(document.documentElement).getPropertyValue('--accent-color');
     const textColor = getComputedStyle(document.documentElement).getPropertyValue('--text-primary');
     const gridColor = currentTheme === 'dark' ? '#2d333b' : '#e5e7eb';
 
-
     const dataLabel = plannerType === 'Nutrition' ? 'Weight (kg)' : 'Strength Score (RM)';
-    const chartData = plannerType === 'Nutrition'
-        ? [85, 84.5, 83, 83.5, 82, 81.5, 80.8, 80]
-        : [50, 55, 60, 65, 63, 70, 75, 80];
-    const chartColor = plannerType === 'Nutrition' ? accentColor : '#a78bfa';
+    const chartData = plannerType === 'Nutrition' ? [85, 84.5, 83, 83.5, 82, 81.5, 80.8, 80] : [50, 55, 60, 65, 63, 70, 75, 80];
+    const chartColor = plannerType === 'Nutrition' ? accentColor : '#a78bfa'; 
 
     plannerChartInstance = new Chart(ctx, {
         type: 'line',
         data: {
             labels: ['Week 1', 'Week 2', 'Week 3', 'Week 4', 'Week 5', 'Week 6', 'Week 7', 'Week 8'],
-            datasets: [{
-                label: dataLabel,
-                data: chartData,
-                borderColor: chartColor,
-                backgroundColor: chartColor + '40',
-                tension: 0.4,
-                fill: true,
-                pointRadius: 5,
-                pointHoverRadius: 7,
-                pointBackgroundColor: currentTheme === 'dark' ? '#161b22' : '#ffffff',
-                pointBorderColor: chartColor
-            }]
+            datasets: [{ label: dataLabel, data: chartData, borderColor: chartColor, backgroundColor: chartColor + '40', tension: 0.4, fill: true, pointRadius: 5, pointHoverRadius: 7, pointBackgroundColor: currentTheme === 'dark' ? '#161b22' : '#ffffff', pointBorderColor: chartColor }]
         },
         options: {
-            responsive: true,
-            maintainAspectRatio: false,
+            responsive: true, maintainAspectRatio: false,
             scales: {
-                y: {
-                    beginAtZero: false,
-                    title: {
-                        display: true,
-                        text: dataLabel,
-                        color: textColor
-                    },
-                    grid: {
-                        color: gridColor,
-                    },
-                    ticks: {
-                        color: textColor
-                    }
-                },
-                x: {
-                    grid: {
-                        display: false,
-                    },
-                    ticks: {
-                        color: textColor
-                    }
-                }
+                y: { beginAtZero: false, title: { display: true, text: dataLabel, color: textColor }, grid: { color: gridColor }, ticks: { color: textColor } },
+                x: { grid: { display: false }, ticks: { color: textColor } }
             },
             plugins: {
-                legend: {
-                    display: true,
-                    labels: {
-                        color: textColor
-                    }
-                },
-                title: {
-                    display: true,
-                    text: plannerType === 'Nutrition' ? '8-Week Weight Progress' : '8-Week Strength Progression',
-                    color: textColor
-                },
-                tooltip: {
-                    backgroundColor: currentTheme === 'dark' ? '#1f2937' : '#ffffff',
-                    titleColor: currentTheme === 'dark' ? '#fff' : '#1f2937',
-                    bodyColor: textColor,
-                    borderColor: accentColor,
-                    borderWidth: 1
-                },
+                legend: { display: true, labels: { color: textColor } },
+                title: { display: true, text: plannerType === 'Nutrition' ? '8-Week Weight Progress' : '8-Week Strength Progression', color: textColor },
+                tooltip: { backgroundColor: currentTheme === 'dark' ? '#1f2937' : '#ffffff', titleColor: currentTheme === 'dark' ? '#fff' : '#1f2937', bodyColor: textColor, borderColor: accentColor, borderWidth: 1 },
             }
         }
     });
@@ -640,77 +571,197 @@ function renderPlannerChart(plannerType) {
 function showView(viewId) {
     const views = document.querySelectorAll('.view');
     views.forEach(view => view.classList.remove('active'));
-
     const targetView = document.getElementById(viewId + '-view');
     if (targetView) {
         targetView.classList.add('active');
-        window.scrollTo(0, 0);
+        window.scrollTo(0, 0); 
     }
-
     if (viewId === 'dashboard') {
-        checkAuthAndShowDashboard();
+            // Removed old auth check since navigation is now hidden
+            if(isLoggedIn) {
+            calculateAndRenderScores();
+            const fab = document.getElementById('fab-container');
+            if(fab) fab.style.display = 'flex';
+            }
     }
+    
+    // Bottom Nav Active State Logic
+    const navItems = document.querySelectorAll('.nav-item');
+    navItems.forEach(item => {
+        // Match the onclick function text to viewId
+        if(item.getAttribute('onclick').includes(viewId)) {
+            item.classList.add('text-[var(--accent-color)]');
+            item.classList.remove('text-gray-400');
+        } else {
+            item.classList.remove('text-[var(--accent-color)]');
+            item.classList.add('text-gray-400');
+        }
+    });
 
-    const mobileMenu = document.getElementById('mobile-menu');
-    if (!mobileMenu.classList.contains('hidden')) {
-        mobileMenu.classList.add('hidden');
-    }
-
-    if (viewId !== 'dashboard') {
-        hasNewActivity = false;
-        renderGoalsAndActivities();
-    }
-
-    if (typeof lucide !== 'undefined') { lucide.createIcons(); }
+    // Optimizations: only render charts/goals if viewing dashboard
+    if (viewId === 'dashboard') { hasNewActivity = false; renderGoals(); }
+    if (typeof lucide !== 'undefined') lucide.createIcons();
 }
 
 function showModal(title, message, buttonText = 'Close', modalClass = 'modal-content', onConfirm = null) {
     const modalContent = document.getElementById('universal-modal-content');
     modalContent.className = '';
-    modalContent.classList.add(modalClass.includes('modal-content') ? 'modal-content' : modalClass);
-
+    modalContent.classList.add(modalClass.includes('modal-content') ? 'modal-content' : modalClass); 
     let buttonHtml = `<button onclick="hideModal()" class="bg-gray-700 hover:bg-gray-600 text-white font-semibold py-2 px-4 rounded-lg transition duration-150">${buttonText}</button>`;
-
     if (onConfirm) {
         const confirmButtonClass = buttonText.toLowerCase().includes('delete') ? 'bg-red-600 hover:bg-red-700 text-white' : 'color-bg-accent color-bg-accent-hover text-black';
-
         buttonHtml = `<button onclick="hideModal(); ${onConfirm}()" class="${confirmButtonClass} font-bold py-2 px-4 rounded-lg transition duration-150 mr-3">${buttonText}</button>`;
         buttonHtml += `<button onclick="hideModal()" class="bg-gray-700 hover:bg-gray-600 text-white font-semibold py-2 px-4 rounded-lg transition duration-150">Cancel</button>`;
     }
-
     modalContent.innerHTML = `
         <button onclick="hideModal()" class="float-right text-gray-400 hover:text-white text-3xl leading-none" aria-label="Close modal">&times;</button>
         <h3 class="text-2xl font-bold mb-3" style="color: var(--text-primary);">${title}</h3>
-        <p class="text-gray-400 mb-6">${message}</p>
-        <div class="flex justify-end">
-            ${buttonHtml}
-        </div>
+        <div class="text-gray-400 mb-6">${message}</div>
+        <div class="flex justify-end">${buttonHtml}</div>
     `;
     document.getElementById('universal-modal-backdrop').style.display = 'flex';
-    if (typeof lucide !== 'undefined') { lucide.createIcons(); }
+    if (typeof lucide !== 'undefined') lucide.createIcons();
 }
 
 function hideModal() {
+    if(timerInterval) clearInterval(timerInterval);
     document.getElementById('universal-modal-backdrop').style.display = 'none';
 }
 
+function showSymptomCheckerModal() {
+    const content = `
+        <button onclick="hideModal()" class="float-right text-gray-400 hover:text-white text-3xl leading-none" aria-label="Close symptom checker">&times;</button>
+        <h3 class="text-2xl font-bold mb-4" style="color: var(--text-primary);"><i data-lucide="stethoscope" class="w-7 h-7 color-accent-text mr-2"></i><span>AI Symptom Checker</span></h3>
+        <p class="text-gray-400 mb-6">Describe your symptoms to receive preliminary guidance. <span class="text-red-400 font-bold">Not a substitute for professional medical advice.</span></p>
+        <form onsubmit="runSymptomCheck(event)" class="space-y-4">
+            <div class="input-group">
+                <label for="symptoms" class="block text-sm font-medium mb-1">Symptoms</label>
+                <i data-lucide="activity" class="w-5 h-5"></i>
+                <textarea id="symptoms" rows="3" placeholder="e.g., Headache, fever, fatigue..." class="w-full bg-gray-800 border border-gray-700 rounded-lg p-3 text-white focus:ring-[var(--accent-color)]" required></textarea>
+            </div>
+            <div class="input-group">
+                <label for="duration" class="block text-sm font-medium mb-1">Duration</label>
+                <i data-lucide="clock" class="w-5 h-5"></i>
+                <select id="duration" class="w-full bg-gray-800 border border-gray-700 rounded-lg p-3 text-white focus:ring-[var(--accent-color)]">
+                    <option>Less than 24 hours</option>
+                    <option>1-3 days</option>
+                    <option>One week or more</option>
+                </select>
+            </div>
+            <button type="submit" class="w-full color-bg-accent color-bg-accent-hover text-black font-bold py-2.5 rounded-lg transition duration-150">Analyze Symptoms</button>
+        </form>
+    `;
+    document.getElementById('universal-modal-content').innerHTML = content;
+    document.getElementById('universal-modal-content').classList.remove('modal-lg');
+    document.getElementById('universal-modal-backdrop').style.display = 'flex';
+    if (typeof lucide !== 'undefined') lucide.createIcons();
+}
+
+function runSymptomCheck(event) {
+    if(event) event.preventDefault();
+    const symptoms = document.getElementById('symptoms').value.toLowerCase();
+    hideModal();
+    
+    let advice = 'Based on your symptoms, it is recommended to **rest and hydrate**.';
+    if (symptoms.includes('headache') || symptoms.includes('migraine')) {
+        advice = 'It sounds like a tension headache or migraine. **Hydrate, rest in a dark room, and consider OTC pain relief.**';
+    } else if (symptoms.includes('fever') || symptoms.includes('temp')) {
+            advice = 'You may be fighting an infection. **Monitor your temperature regularly.** If it exceeds 39°C (102°F), consult a doctor.';
+    } else if (symptoms.includes('stomach') || symptoms.includes('nausea')) {
+            advice = 'Stick to a **BRAT diet (Bananas, Rice, Applesauce, Toast)** and sip water slowly.';
+    }
+
+    showModal('Analysis Complete', `${advice}<br><br>If symptoms persist for more than 24 hours, please use the **Booking** tab to consult a specialist.`, 'Understood');
+}
+
+// BMI Calculator Logic
+function showBMICalculatorModal() {
+        const content = `
+        <button onclick="hideModal()" class="float-right text-gray-400 hover:text-white text-3xl leading-none" aria-label="Close BMI modal">&times;</button>
+        <h3 class="text-2xl font-bold mb-4" style="color: var(--text-primary);"><i data-lucide="calculator" class="w-7 h-7 text-indigo-400 mr-2"></i><span>BMI & Calorie Calculator</span></h3>
+        <form onsubmit="calculateBMI(event)" class="space-y-4">
+            <div class="grid grid-cols-2 gap-4">
+                <div class="input-group">
+                    <label for="bmi-height" class="block text-sm font-medium mb-1">Height (cm)</label>
+                    <input type="number" id="bmi-height" placeholder="175" class="w-full bg-gray-800 border border-gray-700 rounded-lg p-3 text-white focus:ring-[var(--accent-color)]" required>
+                </div>
+                <div class="input-group">
+                        <label for="bmi-weight" class="block text-sm font-medium mb-1">Weight (kg)</label>
+                    <input type="number" id="bmi-weight" placeholder="70" class="w-full bg-gray-800 border border-gray-700 rounded-lg p-3 text-white focus:ring-[var(--accent-color)]" required>
+                </div>
+            </div>
+                <div class="grid grid-cols-2 gap-4">
+                <div class="input-group">
+                    <label for="bmi-age" class="block text-sm font-medium mb-1">Age</label>
+                    <input type="number" id="bmi-age" placeholder="25" class="w-full bg-gray-800 border border-gray-700 rounded-lg p-3 text-white focus:ring-[var(--accent-color)]" required>
+                </div>
+                <div class="input-group">
+                        <label for="bmi-gender" class="block text-sm font-medium mb-1">Gender</label>
+                        <select id="bmi-gender" class="w-full bg-gray-800 border border-gray-700 rounded-lg p-3 text-white focus:ring-[var(--accent-color)]">
+                        <option value="male">Male</option>
+                        <option value="female">Female</option>
+                        </select>
+                </div>
+            </div>
+            <button type="submit" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2.5 rounded-lg transition duration-150">Calculate</button>
+        </form>
+    `;
+    document.getElementById('universal-modal-content').innerHTML = content;
+    document.getElementById('universal-modal-content').classList.remove('modal-lg');
+    document.getElementById('universal-modal-backdrop').style.display = 'flex';
+}
+
+function calculateBMI(e) {
+    e.preventDefault();
+    const h = parseFloat(document.getElementById('bmi-height').value) / 100; // cm to m
+    const w = parseFloat(document.getElementById('bmi-weight').value);
+    const age = parseInt(document.getElementById('bmi-age').value);
+    const gender = document.getElementById('bmi-gender').value;
+    
+    if (!h || !w || !age) return;
+
+    const bmi = (w / (h * h)).toFixed(1);
+    let bmr;
+    if (gender === 'male') bmr = 10 * w + 6.25 * (h*100) - 5 * age + 5;
+    else bmr = 10 * w + 6.25 * (h*100) - 5 * age - 161;
+    
+    let status = "";
+    let color = "";
+    if(bmi < 18.5) { status = "Underweight"; color = "text-yellow-400"; }
+    else if(bmi < 25) { status = "Normal"; color = "text-green-400"; }
+    else if(bmi < 30) { status = "Overweight"; color = "text-orange-400"; }
+    else { status = "Obese"; color = "text-red-400"; }
+    
+    hideModal();
+    showModal('Results', `
+    <div class="text-center">
+        <p class="text-4xl font-bold ${color}">${bmi}</p>
+        <p class="text-gray-400 mb-4">${status}</p>
+        <hr class="border-gray-700 my-4">
+        <p class="text-sm">Estimated Daily Maintenance Calories:</p>
+        <p class="text-2xl font-bold text-white">${Math.round(bmr * 1.2)} kcal <span class="text-xs font-normal text-gray-500">(Sedentary)</span></p>
+    </div>
+    `, 'Close');
+}
+
+// Optimized Settings Modal (Categorized)
 function showSettingsModal() {
     const themeIcon = currentTheme === 'dark' ? 'sun' : 'moon';
     const themeLabel = currentTheme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode';
     const content = `
         <button onclick="hideModal()" class="float-right text-gray-400 hover:text-white text-3xl leading-none" aria-label="Close settings modal">&times;</button>
-        <h3 class="text-2xl font-bold mb-4" style="color: var(--text-primary);"><i data-lucide="settings" class="w-7 h-7 color-accent-text mr-2"></i><span>App Settings</span></h3>
-        <p class="text-gray-400 mb-6">General, data, and privacy features for a personalized experience.</p>
+        <h3 class="text-2xl font-bold mb-4" style="color: var(--text-primary);"><i data-lucide="settings" class="w-7 h-7 color-accent-text mr-2"></i>App Settings</h3>
 
         <div class="space-y-4">
+            <!-- Appearance Section -->
             <div class="p-3 bg-gray-800 rounded-lg">
-                <h4 class="font-bold mb-2 flex items-center space-x-2" style="color: var(--text-primary);"><i data-lucide="paint-roller" class="w-5 h-5 text-purple-400"></i><span>Appearance</span></h4>
+                <h4 class="font-bold mb-2 text-xs uppercase tracking-wider text-gray-500">Appearance & System</h4>
                 <div class="space-y-2 text-sm text-gray-400">
-                    <button onclick="toggleTheme()" class="w-full text-left p-2 rounded-lg bg-gray-700 hover:bg-gray-600 flex justify-between items-center text-white font-semibold">
+                    <button onclick="toggleTheme()" class="w-full text-left p-2 rounded-lg bg-gray-700 hover:bg-gray-600 flex justify-between items-center text-white font-semibold transition">
                         <span>${themeLabel}</span>
                         <i data-lucide="${themeIcon}" class="w-5 h-5"></i>
                     </button>
-                    <div class="flex justify-between items-center">
+                    <div class="flex justify-between items-center px-2">
                         <span>Color Accent</span>
                         <select onchange="applyAccentColor(this.value)" class="bg-gray-700 border border-gray-600 rounded-lg p-1 text-xs text-white focus:ring-accent-teal">
                             <option value="Teal" ${getComputedStyle(document.documentElement).getPropertyValue('--accent-color').trim() === '#2dd4bf' ? 'selected' : ''}>Teal (Default)</option>
@@ -718,34 +769,29 @@ function showSettingsModal() {
                             <option value="Pink" ${getComputedStyle(document.documentElement).getPropertyValue('--accent-color').trim() === '#f472b6' ? 'selected' : ''}>Pink</option>
                         </select>
                     </div>
+                        <button onclick="installApp()" class="w-full text-left p-2 rounded-lg hover:bg-gray-700 flex justify-between items-center text-gray-300 hover:text-white transition">
+                        <span>Install App to Device</span>
+                        <i data-lucide="download" class="w-4 h-4"></i>
+                    </button>
                 </div>
             </div>
 
+            <!-- Data Section -->
             <div class="p-3 bg-gray-800 rounded-lg">
-                <h4 class="font-bold mb-2 flex items-center space-x-2" style="color: var(--text-primary);"><i data-lucide="database" class="w-5 h-5 text-red-400"></i><span>Data & Privacy</span></h4>
+                <h4 class="font-bold mb-2 text-xs uppercase tracking-wider text-gray-500">Data & Privacy</h4>
                 <div class="space-y-2 text-sm text-gray-400">
-                    <button onclick="hideModal(); showDataPermissionsModal()" class="w-full text-left p-2 rounded-lg bg-gray-700 hover:bg-gray-600 text-white">
-                        Manage Data Permissions
-                    </button>
-                    <button onclick="hideModal(); showDataExportModal()" class="w-full text-left p-2 rounded-lg bg-gray-700 hover:bg-gray-600 text-white">
-                        Export All Health Data
-                    </button>
-                    <button onclick="showModal('Erase Data', 'This will permanently delete ALL your health data. Are you absolutely sure?', 'Delete All', 'modal-content', 'eraseAllData')" class="w-full text-left p-2 rounded-lg bg-red-800 hover:bg-red-700 text-red-300 font-bold">
-                        Erase All Data
-                    </button>
+                    <button onclick="hideModal(); showDataPermissionsModal()" class="w-full text-left p-2 rounded-lg hover:bg-gray-700 text-gray-300 hover:text-white transition">Manage Data Permissions</button>
+                    <button onclick="hideModal(); showDataExportModal()" class="w-full text-left p-2 rounded-lg hover:bg-gray-700 text-gray-300 hover:text-white transition">Export All Health Data</button>
+                    <div class="border-t border-gray-700 my-1"></div>
+                    <button onclick="showModal('Erase Data', 'This will permanently delete ALL your health data. Are you absolutely sure?', 'Delete All', 'modal-content', 'eraseAllData')" class="w-full text-left p-2 rounded-lg text-red-400 hover:bg-red-900/30 font-semibold transition flex items-center"><i data-lucide="trash-2" class="w-4 h-4 mr-2"></i> Erase All Data</button>
                 </div>
             </div>
-
-            <button onclick="hideModal(); showDeviceLinkModal()" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-2.5 rounded-lg transition duration-150 flex items-center justify-center space-x-2">
-                <i data-lucide="watch" class="w-5 h-5"></i>
-                <span>Connect/Manage Smart Device</span>
-            </button>
         </div>
     `;
     document.getElementById('universal-modal-content').innerHTML = content;
     document.getElementById('universal-modal-content').classList.remove('modal-lg');
     document.getElementById('universal-modal-backdrop').style.display = 'flex';
-    if (typeof lucide !== 'undefined') { lucide.createIcons(); }
+    if (typeof lucide !== 'undefined') lucide.createIcons();
 }
 
 function showDataExportModal() {
@@ -763,24 +809,13 @@ function showDataExportModal() {
                     <option>FHIR (EHR)</option>
                 </select>
             </div>
-            <div class="input-group">
-                <label for="export-range" class="block text-sm font-medium mb-1">Date Range</label>
-                <i data-lucide="calendar" class="w-5 h-5"></i>
-                <select id="export-range" class="w-full bg-gray-800 border border-gray-700 rounded-lg p-3 text-white focus:ring-[var(--accent-color)]">
-                    <option>Last 30 Days</option>
-                    <option>Last 1 Year</option>
-                    <option>All Time</option>
-                </select>
-            </div>
-            <button onclick="simulateExport()" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-2.5 rounded-lg transition duration-150">
-                Generate & Download
-            </button>
+            <button onclick="simulateExport()" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-2.5 rounded-lg transition duration-150">Generate & Download</button>
         </div>
     `;
     document.getElementById('universal-modal-content').innerHTML = content;
     document.getElementById('universal-modal-content').classList.remove('modal-lg');
     document.getElementById('universal-modal-backdrop').style.display = 'flex';
-    if (typeof lucide !== 'undefined') { lucide.createIcons(); }
+    if (typeof lucide !== 'undefined') lucide.createIcons();
 }
 
 function simulateExport() {
@@ -789,6 +824,7 @@ function simulateExport() {
 }
 
 function eraseAllData() {
+    localStorage.clear();
     mockActivities = [];
     mockGoals = [];
     mockMedications = [];
@@ -798,11 +834,10 @@ function eraseAllData() {
     healthScores = { activity: 50, sleep: 50, stress: 50, nutrition: 50 };
     isLoggedIn = false;
     loggedInUser = '';
-
     updateHeaderAuthDisplay();
     calculateAndRenderScores();
     showView('home');
-    showModal('Data Erased', 'All personalized data has been permanently deleted. Your privacy is secured.', 'Restart App');
+    showModal('Data Erased', 'All personalized data has been permanently deleted from this device. Your privacy is secured.', 'Restart App');
 }
 
 function simulateBandPurchase() {
@@ -827,19 +862,13 @@ function showManualDataImportModal() {
                 <label for="data-file" class="block text-sm font-medium mb-1">Select File (CSV, JSON)</label>
                 <input type="file" id="data-file" accept=".csv, .json" class="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-gray-700 file:text-white hover:file:bg-gray-600" required>
             </div>
-            <div class="flex items-center">
-                <input type="checkbox" id="overwrite" class="h-4 w-4 rounded border-gray-700 bg-gray-700 text-accent-teal focus:ring-[var(--accent-color)]">
-                <label for="overwrite" class="ml-2 text-sm text-gray-400">Overwrite existing data</label>
-            </div>
-            <button type="submit" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2.5 rounded-lg transition duration-150">
-                Start Secure Import
-            </button>
+            <button type="submit" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2.5 rounded-lg transition duration-150">Start Secure Import</button>
         </form>
     `;
     document.getElementById('universal-modal-content').innerHTML = content;
     document.getElementById('universal-modal-content').classList.remove('modal-lg');
     document.getElementById('universal-modal-backdrop').style.display = 'flex';
-    if (typeof lucide !== 'undefined') { lucide.createIcons(); }
+    if (typeof lucide !== 'undefined') lucide.createIcons();
 }
 
 function simulateDataUpload(event) {
@@ -854,31 +883,18 @@ function showDataPermissionsModal() {
         <button onclick="hideModal(); showDeviceLinkModal()" class="float-right text-gray-400 hover:text-white text-3xl leading-none">&times;</button>
         <h3 class="text-2xl font-bold mb-4" style="color: var(--text-primary);"><i data-lucide="key" class="w-7 h-7 text-yellow-400 mr-2"></i><span>Manage Data Permissions</span></h3>
         <p class="text-gray-400 mb-6">Control which data categories linked devices and external partners can access.</p>
-
         <div class="space-y-3">
             <div class="flex justify-between items-center p-3 bg-gray-800 rounded-lg">
                 <span class="text-sm" style="color: var(--text-primary);">Real-time Heart Rate</span>
                 <input type="checkbox" checked class="h-4 w-4 rounded border-gray-700 bg-gray-700 text-accent-teal focus:ring-[var(--accent-color)]">
             </div>
-            <div class="flex justify-between items-center p-3 bg-gray-800 rounded-lg">
-                <span class="text-sm" style="color: var(--text-primary);">Sleep Stage Data</span>
-                <input type="checkbox" checked class="h-4 w-4 rounded border-gray-700 bg-gray-700 text-accent-teal focus:ring-[var(--accent-color)]">
-            </div>
-            <div class="flex justify-between items-center p-3 bg-gray-800 rounded-lg">
-                <span class="text-sm" style="color: var(--text-primary);">Location History (Activity Mapping)</span>
-                <input type="checkbox" class="h-4 w-4 rounded border-gray-700 bg-gray-700 text-accent-teal focus:ring-[var(--accent-color)]">
-            </div>
         </div>
-
-        <p class="text-xs text-gray-500 mt-4">Note: Disabling permissions may limit personalized AI insights.</p>
-            <button onclick="hideModal(); showDeviceLinkModal()" class="mt-6 w-full bg-yellow-600 hover:bg-yellow-700 text-black font-bold py-2.5 rounded-lg transition duration-150">
-                Save Permissions
-            </button>
+        <button onclick="hideModal(); showDeviceLinkModal()" class="mt-6 w-full bg-yellow-600 hover:bg-yellow-700 text-black font-bold py-2.5 rounded-lg transition duration-150">Save Permissions</button>
     `;
     document.getElementById('universal-modal-content').innerHTML = content;
     document.getElementById('universal-modal-content').classList.remove('modal-lg');
     document.getElementById('universal-modal-backdrop').style.display = 'flex';
-    if (typeof lucide !== 'undefined') { lucide.createIcons(); }
+    if (typeof lucide !== 'undefined') lucide.createIcons();
 }
 
 function simulateDeviceLink(provider) {
@@ -890,11 +906,10 @@ function loginUser(event) {
     if (event) event.preventDefault();
     const email = document.getElementById('login-email').value;
     loggedInUser = email.split('@')[0];
-
     hideAuthModal();
     isLoggedIn = true;
+    saveData(); // Save login state
     updateHeaderAuthDisplay();
-
     showModal('Login Successful', `Welcome back to PULSE, **${loggedInUser}**! Redirecting to your Dashboard.`, 'Continue');
     setTimeout(() => showView('dashboard'), 1500);
 }
@@ -903,20 +918,17 @@ function signUpUser(event) {
     if (event) event.preventDefault();
     const fullNameInput = document.getElementById('signup-name').value.trim();
     const fullName = fullNameInput || 'PULSE User';
-
     loggedInUser = fullName;
-
     hideAuthModal();
     isLoggedIn = true;
+    saveData(); // Save login state
     updateHeaderAuthDisplay();
-
     showModal('Account Created', `Your PULSE account is ready, **${loggedInUser}**! Redirecting to your Dashboard.`, 'Continue');
     setTimeout(() => showView('dashboard'), 1500);
 }
 
 function showDeepDiveModal() {
     const currentScore = document.getElementById('overall-score').textContent;
-
     const content = `
         <button onclick="hideModal()" class="float-right text-gray-400 hover:text-white text-3xl leading-none" aria-label="Close deep dive modal">&times;</button>
         <h3 class="text-2xl font-bold mb-4" style="color: var(--text-primary);"><i data-lucide="scan" class="w-7 h-7 color-accent-text mr-2"></i><span>Weekly Wellness Deep Dive (Score: ${currentScore})</span></h3>
@@ -924,32 +936,21 @@ function showDeepDiveModal() {
         <ul class="space-y-4">
             <li class="score-item p-4 rounded-lg border-l-4 border-green-500">
                 <p class="font-bold text-white">Activity (${healthScores.activity}/100):</p>
-                <p class="text-sm text-gray-400">Excellent performance. Maintain 150+ minutes of moderate activity. Recommendation: Increase interval training slightly.</p>
-            </li>
-            <li class="score-item p-4 rounded-lg border-l-4 border-yellow-500">
-                <p class="font-bold text-white">Sleep (${healthScores.sleep}/100):</p>
-                <p class="text-sm text-gray-400">Good average duration (8h 15m), but **time in deep sleep** decreased slightly. Recommendation: Adjust evening routine (screen time).</p>
-            </li>
-            <li class="score-item p-4 rounded-lg border-l-4 border-red-500">
-                <p class="font-bold text-white">Stress (${healthScores.stress}/100):</p>
-                <p class="text-sm text-gray-400">Heart Rate Variability (HRV) shows elevated stress spikes on Wednesday. Recommendation: Utilize 10-minute meditation sessions in the Wellness Studio.</p>
+                <p class="text-sm text-gray-400">Excellent performance. Maintain 150+ minutes of moderate activity.</p>
             </li>
         </ul>
-        <button onclick="hideModal(); showView('wellness');" class="mt-6 w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2.5 rounded-lg transition duration-150">
-            Go to Wellness Studio for Stress Relief
-        </button>
+        <button onclick="hideModal(); showView('wellness');" class="mt-6 w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2.5 rounded-lg transition duration-150">Go to Wellness Studio for Stress Relief</button>
     `;
     document.getElementById('universal-modal-content').innerHTML = content;
     document.getElementById('universal-modal-backdrop').style.display = 'flex';
-    if (typeof lucide !== 'undefined') { lucide.createIcons(); }
+    if (typeof lucide !== 'undefined') lucide.createIcons();
 }
 
 function showEditDataModal() {
     let listHtml = mockActivities.slice().reverse().map(activity => {
         const id = activity.id;
         const display = `${activity.metric} - ${activity.value} (${activity.date})`;
-        let color = activity.type === 'Activity' ? 'border-accent-teal' : activity.type === 'Sleep' ? 'border-indigo-400' : (activity.type === 'Mindfulness' ? 'border-pink-400' : 'border-green-500');
-
+        let color = activity.type === 'Activity' ? 'border-accent-teal' : 'border-green-500';
         return `
             <li class="flex justify-between items-center bg-gray-800 p-3 rounded-lg border-l-4 ${color}">
                 <span class="text-sm" style="color: var(--text-primary);">${display}</span>
@@ -964,33 +965,21 @@ function showEditDataModal() {
     const content = `
         <button onclick="hideModal()" class="float-right text-gray-400 hover:text-white text-3xl leading-none" aria-label="Close edit data modal">&times;</button>
         <h3 class="text-2xl font-bold mb-4" style="color: var(--text-primary);"><i data-lucide="edit-3" class="w-7 h-7 text-yellow-400 mr-2"></i><span>Edit Health Data</span></h3>
-        <p class="text-gray-400 mb-6">Select a recent entry to view, adjust, or delete it. **${mockActivities.length}** entries found.</p>
-
+        <p class="text-gray-400 mb-6">Select a recent entry to view, adjust, or delete it.</p>
         <ul class="space-y-3 max-h-60 overflow-y-auto pr-2 mb-4">${listHtml || '<p class="text-gray-500">No data entries logged yet.</p>'}</ul>
-
-        <button onclick="hideModal(); showManualDataModal();" class="w-full color-bg-accent color-bg-accent-hover text-black font-bold py-2.5 rounded-lg transition duration-150 mb-3">
-            <i data-lucide="plus" class="w-4 h-4 inline-block mr-2"></i> Add New Data Manually
-        </button>
-        <button onclick="hideModal()" class="w-full bg-gray-700 hover:bg-gray-600 text-white font-bold py-2.5 rounded-lg transition duration-150">
-            Done Editing
-        </button>
+        <button onclick="hideModal(); showManualDataModal();" class="w-full color-bg-accent color-bg-accent-hover text-black font-bold py-2.5 rounded-lg transition duration-150 mb-3"><i data-lucide="plus" class="w-4 h-4 inline-block mr-2"></i> Add New Data Manually</button>
+        <button onclick="hideModal()" class="w-full bg-gray-700 hover:bg-gray-600 text-white font-bold py-2.5 rounded-lg transition duration-150">Done Editing</button>
     `;
     document.getElementById('universal-modal-content').innerHTML = content;
     document.getElementById('universal-modal-content').classList.add('modal-lg');
     document.getElementById('universal-modal-backdrop').style.display = 'flex';
-    if (typeof lucide !== 'undefined') { lucide.createIcons(); }
+    if (typeof lucide !== 'undefined') lucide.createIcons();
 }
 
 function showActualEditDataModal(id) {
     const activity = mockActivities.find(a => a.id === id);
-    if (!activity) {
-        hideModal();
-        showModal('Error', 'Data entry not found.', 'OK');
-        return;
-    }
-
+    if (!activity) { hideModal(); showModal('Error', 'Data entry not found.', 'OK'); return; }
     hideModal();
-
     const content = `
         <button onclick="showEditDataModal()" class="float-right text-gray-400 hover:text-white text-3xl leading-none" aria-label="Close edit modal and go back">&times;</button>
         <h3 class="text-2xl font-bold mb-4" style="color: var(--text-primary);">Editing Entry ID: ${activity.id}</h3>
@@ -1011,18 +1000,15 @@ function showActualEditDataModal(id) {
     document.getElementById('universal-modal-content').innerHTML = content;
     document.getElementById('universal-modal-content').classList.remove('modal-lg');
     document.getElementById('universal-modal-backdrop').style.display = 'flex';
-    if (typeof lucide !== 'undefined') { lucide.createIcons(); }
+    if (typeof lucide !== 'undefined') lucide.createIcons();
 }
 
 function saveEditedData(event, id) {
     if (event) event.preventDefault();
     const newValue = document.getElementById('edit-value').value;
-
     const index = mockActivities.findIndex(a => a.id === id);
-    if (index !== -1) {
-        mockActivities[index].value = newValue;
-    }
-
+    if (index !== -1) mockActivities[index].value = newValue;
+    saveData(); // Persist edits
     hideModal();
     showModal('Data Updated', `Entry ID ${id} value successfully updated to **${newValue}**. Dashboard recalculated.`, 'View Dashboard');
     calculateAndRenderScores();
@@ -1031,10 +1017,9 @@ function saveEditedData(event, id) {
 function editDataAction(id, action) {
     if (action === 'delete') {
         mockActivities = mockActivities.filter(a => a.id !== id);
-
-        hideModal();
+        saveData(); // Persist deletion
+        hideModal(); 
         showModal('Data Deleted', `Entry ID **${id}** has been successfully deleted from your history.`, 'OK');
-
         calculateAndRenderScores();
     }
 }
@@ -1060,27 +1045,20 @@ function showGoalManagementModal() {
     const content = `
         <button onclick="hideModal()" class="float-right text-gray-400 hover:text-white text-3xl leading-none" aria-label="Close goal management modal">&times;</button>
         <h3 class="text-2xl font-bold mb-4" style="color: var(--text-primary);"><i data-lucide="target" class="w-7 h-7 color-accent-text mr-2"></i><span>Goal Management</span></h3>
-        <p class="text-gray-400 mb-4">View and modify your personalized health and fitness goals.</p>
         <ul class="space-y-3 max-h-60 overflow-y-auto pr-2 mb-6">${listHtml}</ul>
-
-        <button onclick="showGoalEditorModal(null)" class="w-full color-bg-accent color-bg-accent-hover text-black font-bold py-2.5 rounded-lg transition duration-150">
-            Add New Goal
-        </button>
+        <button onclick="showGoalEditorModal(null)" class="w-full color-bg-accent color-bg-accent-hover text-black font-bold py-2.5 rounded-lg transition duration-150">Add New Goal</button>
     `;
     document.getElementById('universal-modal-content').innerHTML = content;
     document.getElementById('universal-modal-content').classList.add('modal-lg');
     document.getElementById('universal-modal-backdrop').style.display = 'flex';
-    if (typeof lucide !== 'undefined') { lucide.createIcons(); }
+    if (typeof lucide !== 'undefined') lucide.createIcons();
 }
 
 function showGoalEditorModal(id) {
     const isNew = id === null;
     const goal = mockGoals.find(g => g.id === id) || { name: '', target: '', current: 0, type: 'Custom' };
-
     if (!isNew) hideModal();
-
     const title = isNew ? 'Add New Goal' : `Edit Goal: ${goal.name}`;
-
     const content = `
         <button onclick="${isNew ? 'hideModal()' : 'showGoalManagementModal()'}" class="float-right text-gray-400 hover:text-white text-3xl leading-none" aria-label="Close goal editor modal">&times;</button>
         <h3 class="text-2xl font-bold mb-4" style="color: var(--text-primary);">${title}</h3>
@@ -1106,7 +1084,7 @@ function showGoalEditorModal(id) {
     document.getElementById('universal-modal-content').innerHTML = content;
     document.getElementById('universal-modal-content').classList.remove('modal-lg');
     document.getElementById('universal-modal-backdrop').style.display = 'flex';
-    if (typeof lucide !== 'undefined') { lucide.createIcons(); }
+    if (typeof lucide !== 'undefined') lucide.createIcons();
 }
 
 function saveGoal(event, id) {
@@ -1114,39 +1092,24 @@ function saveGoal(event, id) {
     const name = document.getElementById('goal-name').value;
     const target = parseFloat(document.getElementById('goal-target').value);
     const current = parseFloat(document.getElementById('goal-current').value);
-
     const index = mockGoals.findIndex(g => g.id === id);
-
-    if (index !== -1) {
-        mockGoals[index].name = name;
-        mockGoals[index].target = target;
-        mockGoals[index].current = current;
-    } else {
-        mockGoals.push({
-            id: nextGoalId++,
-            name: name,
-            target: target,
-            current: current,
-            type: "Custom"
-        });
-    }
-
+    if (index !== -1) { mockGoals[index].name = name; mockGoals[index].target = target; mockGoals[index].current = current; } 
+    else { mockGoals.push({ id: nextGoalId++, name: name, target: target, current: current, type: "Custom" }); }
+    saveData(); // Persist goal
     hideModal();
     showModal('Goal Saved', `Goal **${name}** saved successfully!`, 'OK');
-
     calculateAndRenderScores();
-    setTimeout(showGoalManagementModal, 500);
+    setTimeout(showGoalManagementModal, 500); 
 }
 
 function confirmGoalDelete(id) {
-     const goal = mockGoals.find(g => g.id === id);
-     if (goal) {
-         showModal('Confirm Deletion', `Are you sure you want to delete the goal: **${goal.name}**? This action cannot be undone.`, 'Delete', 'modal-content', `deleteGoalById(${id})`);
-     }
+        const goal = mockGoals.find(g => g.id === id);
+        if (goal) showModal('Confirm Deletion', `Are you sure you want to delete the goal: **${goal.name}**? This action cannot be undone.`, 'Delete', 'modal-content', `deleteGoalById(${id})`);
 }
 
 function deleteGoalById(id) {
     mockGoals = mockGoals.filter(g => g.id !== id);
+    saveData(); // Persist delete
     showModal('Goal Deleted', 'Goal successfully removed.', 'OK');
     calculateAndRenderScores();
     setTimeout(showGoalManagementModal, 500);
@@ -1172,7 +1135,7 @@ function showManualDataModal() {
             <div class="input-group">
                 <label for="value" class="block text-sm font-medium mb-1">Value</label>
                 <i data-lucide="hash" class="w-5 h-5"></i>
-                <input type="text" id="value" placeholder="Enter value(s) (e.g., 105/70 for BP)" class="w-full bg-gray-800 border border-gray-700 rounded-lg p-3 text-white focus:ring-[var(--accent-color)]" required>
+                <input type="text" id="value" placeholder="Enter value(s) (e.g., 5000 or 8.5)" class="w-full bg-gray-800 border border-gray-700 rounded-lg p-3 text-white focus:ring-[var(--accent-color)]" required>
             </div>
             <button type="submit" class="w-full color-bg-accent color-bg-accent-hover text-black font-bold py-2.5 rounded-lg transition duration-150">Submit Data</button>
         </form>
@@ -1180,45 +1143,24 @@ function showManualDataModal() {
     document.getElementById('universal-modal-content').innerHTML = content;
     document.getElementById('universal-modal-content').classList.remove('modal-lg');
     document.getElementById('universal-modal-backdrop').style.display = 'flex';
-    if (typeof lucide !== 'undefined') {
-        lucide.createIcons();
-    }
+    if (typeof lucide !== 'undefined') lucide.createIcons();
 }
 
 function submitManualData(event) {
     if (event) event.preventDefault();
     const metricInput = document.getElementById('metric').value;
     const value = document.getElementById('value').value;
-
     let activityType, metricName;
-
-    if (metricInput === 'steps' || metricInput === 'weight') {
-        activityType = 'Activity';
-        metricName = metricInput.toUpperCase();
-    } else if (metricInput === 'sleep') {
-        activityType = 'Sleep';
-        metricName = 'SLEEP';
-    } else if (metricInput === 'mindfulness') {
-        activityType = 'Mindfulness';
-        metricName = 'MEDITATION';
-    } else {
-        activityType = 'Health';
-        metricName = metricInput.toUpperCase();
-    }
-
-    mockActivities.push({
-        id: nextActivityId++,
-        metric: metricName,
-        value: value,
-        date: new Date().toLocaleDateString(),
-        type: activityType
-    });
-
+    if (metricInput === 'steps' || metricInput === 'weight') { activityType = 'Activity'; metricName = metricInput.toUpperCase(); } 
+    else if (metricInput === 'sleep') { activityType = 'Sleep'; metricName = 'SLEEP'; } 
+    else if (metricInput === 'mindfulness') { activityType = 'Mindfulness'; metricName = 'MEDITATION'; } 
+    else { activityType = 'Health'; metricName = metricInput.toUpperCase(); }
+    
+    mockActivities.push({ id: nextActivityId++, metric: metricName, value: value, date: getIndianDate(), type: activityType });
     hasNewActivity = true;
-
+    saveData(); // Persist new data
     hideModal();
     showModal('Data Added', `Successfully logged **${value}** for **${metricName}**. Your dashboard is updating.`, 'View Dashboard');
-
     calculateAndRenderScores();
 }
 
@@ -1228,15 +1170,34 @@ function bookAppointment(event) {
     const date = document.getElementById('date').value;
     const type = document.getElementById('type').value;
     const reason = document.getElementById('reason').value;
+    const phone = document.getElementById('phone').value;
 
-    if (specialty && date && reason) {
-        hideModal();
-        showModal('Appointment Confirmation',
-            `Finding available slots for a **${type.toUpperCase()}** consultation with a **${specialty.toUpperCase()}** specialist on **${date}**. Reason: ${reason}. If available, you will receive a confirmation shortly.`,
-            'OK, Check Slots');
-    } else {
-        showModal('Incomplete Form', 'Please fill out all required fields (specialty, date, and reason) to find available slots.', 'Try Again');
+    // Strict regex for Indian Phone Numbers
+    const indianPhoneRegex = /^(\+91[\-\s]?)?[0]?(91)?[6789]\d{9}$/;
+
+    if (!indianPhoneRegex.test(phone)) {
+            showModal('Invalid Phone Number', 'Please enter a valid Indian mobile number. It should start with 6-9 and be 10 digits long (optional +91 prefix).', 'Fix Number');
+            return;
     }
+
+    if (specialty && date && reason && phone) {
+        hideModal();
+        if(type === 'video') {
+                showModal('Appointment Confirmed', `Your <strong>Video Consultation</strong> with a <strong>${specialty.toUpperCase()}</strong> specialist is confirmed for today. You can join the waiting room immediately.`, 'Join Video Call Now', 'modal-content', 'startVideoConsultation');
+        } else {
+                showModal('Appointment Confirmation', `Finding available slots for a **${type.toUpperCase()}** consultation with a **${specialty.toUpperCase()}** specialist on **${date}**. Confirmation sent to **${phone}**.`, 'OK, Check Slots');
+        }
+    } else {
+        showModal('Incomplete Form', 'Please fill out all required fields (specialty, date, phone, reason) to find available slots.', 'Try Again');
+    }
+}
+
+function startVideoConsultation() {
+    showView('video-consultation');
+}
+
+function endVideoCall() {
+    showModal('Call Ended', 'The secure consultation has ended. A summary has been saved to your health records.', 'Return to Dashboard', 'modal-content', "showView('dashboard')");
 }
 
 function portalAction(action) {
@@ -1246,23 +1207,33 @@ function portalAction(action) {
 function makeSubscriptionPayment(planName, price) {
     const content = `
         <button onclick="hideModal()" class="float-right text-gray-400 hover:text-white text-3xl leading-none" aria-label="Close payment modal">&times;</button>
-        <h3 class="text-2xl font-bold mb-4" style="color: var(--text-primary);">
-            <i data-lucide="credit-card" class="w-7 h-7 text-yellow-500 mr-2"></i>
-            <span>Confirm ${planName} Subscription</span>
-        </h3>
+        <h3 class="text-2xl font-bold mb-4" style="color: var(--text-primary);"><i data-lucide="credit-card" class="w-7 h-7 text-yellow-500 mr-2"></i><span>Confirm ${planName} Subscription</span></h3>
         <p class="text-gray-400 mb-6">You are subscribing to the **${planName}** plan for one month. Your card will be charged monthly.</p>
         <div class="flex justify-between items-center bg-gray-700/50 p-3 rounded-lg mb-6 border border-gray-600">
             <span class="text-sm text-gray-300">Monthly Price:</span>
             <span class="text-3xl font-extrabold text-yellow-500">₹${price}</span>
         </div>
-        <button onclick="simulateSubscriptionProcessing('${planName}', ${price})" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-2.5 rounded-lg transition duration-150">
-            Proceed to Secure Checkout
-        </button>
+        <h4 class="text-sm font-semibold mb-3 text-gray-300">Select Payment Method:</h4>
+        <div class="grid grid-cols-3 gap-3 mb-6">
+            <button onclick="simulateSubscriptionProcessing('${planName}', ${price})" class="flex flex-col items-center justify-center p-3 rounded-lg bg-gray-800 hover:bg-gray-700 border border-gray-600 transition">
+                    <i data-lucide="smartphone" class="w-6 h-6 mb-1 text-green-400"></i>
+                    <span class="text-xs font-bold">PhonePe</span>
+            </button>
+            <button onclick="simulateSubscriptionProcessing('${planName}', ${price})" class="flex flex-col items-center justify-center p-3 rounded-lg bg-gray-800 hover:bg-gray-700 border border-gray-600 transition">
+                    <i data-lucide="zap" class="w-6 h-6 mb-1 text-blue-400"></i>
+                    <span class="text-xs font-bold">GPay</span>
+            </button>
+            <button onclick="simulateSubscriptionProcessing('${planName}', ${price})" class="flex flex-col items-center justify-center p-3 rounded-lg bg-gray-800 hover:bg-gray-700 border border-gray-600 transition">
+                    <i data-lucide="wallet" class="w-6 h-6 mb-1 text-blue-300"></i>
+                    <span class="text-xs font-bold">Paytm</span>
+            </button>
+        </div>
+        <button onclick="simulateSubscriptionProcessing('${planName}', ${price})" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-2.5 rounded-lg transition duration-150">Proceed to Secure Checkout (Card)</button>
     `;
     document.getElementById('universal-modal-content').innerHTML = content;
     document.getElementById('universal-modal-content').classList.remove('modal-lg');
     document.getElementById('universal-modal-backdrop').style.display = 'flex';
-    if (typeof lucide !== 'undefined') { lucide.createIcons(); }
+    if (typeof lucide !== 'undefined') lucide.createIcons();
 }
 
 function simulateSubscriptionProcessing(planName, price) {
@@ -1274,32 +1245,54 @@ function simulateSubscriptionProcessing(planName, price) {
     }, 2000);
 }
 
-function makePayment() {
-     showView('booking');
-     showModal('Subscription Required', 'Please select a subscription plan below to access premium features like advanced booking and reports.', 'Choose Plan');
-}
-
+// Real PDF Generation using jsPDF
 function generateHealthReport() {
-    const content = `
-        <button onclick="hideModal()" class="float-right text-gray-400 hover:text-white text-3xl leading-none" aria-label="Close report options modal">&times;</button>
-        <h3 class="text-2xl font-bold mb-4" style="color: var(--text-primary);"><i data-lucide="file-check-2" class="w-7 h-7 color-accent-text mr-2"></i><span>Health Report Options</span></h3>
-        <p class="text-gray-400 mb-6">Select how you'd like to use your AI-driven health summary:</p>
-        <div class="space-y-3">
-            <button onclick="reportAction('PDF Export')" class="w-full color-bg-accent color-bg-accent-hover text-black font-bold py-2.5 rounded-lg transition duration-150 flex items-center justify-center space-x-2">
-                <i data-lucide="file-text" class="w-5 h-5"></i><span>Export PDF/Printable</span>
-            </button>
-            <button onclick="reportAction('Sharing')" class="w-full bg-gray-700 hover:bg-gray-600 text-white font-bold py-2.5 rounded-lg transition duration-150 flex items-center justify-center space-x-2">
-                <i data-lucide="share-2" class="w-5 h-5"></i><span>Shareable Link (EHR)</span>
-            </button>
-            <button onclick="reportAction('Trend Analysis')" class="w-full bg-gray-700 hover:bg-gray-600 text-white font-bold py-2.5 rounded-lg transition duration-150 flex items-center justify-center space-x-2">
-                <i data-lucide="line-chart" class="w-5 h-5"></i><span>View Trend Analysis</span>
-            </button>
-        </div>
-    `;
-    document.getElementById('universal-modal-content').innerHTML = content;
-    document.getElementById('universal-modal-content').classList.remove('modal-lg');
-    document.getElementById('universal-modal-backdrop').style.display = 'flex';
-    if (typeof lucide !== 'undefined') { lucide.createIcons(); }
+    if (!window.jspdf) {
+            showModal('Error', 'PDF library not loaded. Please check internet connection.', 'OK');
+            return;
+    }
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF();
+    const date = getIndianDate();
+    
+    // Header
+    doc.setFontSize(22);
+    doc.setTextColor(40, 40, 40);
+    doc.text("PULSE Health Report", 10, 20);
+    
+    doc.setFontSize(12);
+    doc.setTextColor(100, 100, 100);
+    doc.text(`Generated on: ${date}`, 10, 30);
+    doc.text(`User: ${loggedInUser || 'Guest User'}`, 10, 36);
+    doc.setLineWidth(0.5);
+    doc.line(10, 40, 200, 40);
+    
+    // Scores
+    doc.setFontSize(16);
+    doc.setTextColor(0, 0, 0);
+    doc.text("Weekly Wellness Overview", 10, 50);
+    
+    doc.setFontSize(12);
+    doc.text(`Overall Score: ${document.getElementById('overall-score')?.textContent || 0}/100`, 10, 60);
+    doc.text(`Activity Score: ${healthScores.activity}/100`, 10, 68);
+    doc.text(`Sleep Score: ${healthScores.sleep}/100`, 10, 76);
+    doc.text(`Stress Score: ${healthScores.stress}/100`, 10, 84);
+    doc.text(`Nutrition Score: ${healthScores.nutrition}/100`, 10, 92);
+    
+    // Recent Activity
+    doc.setFontSize(16);
+    doc.text("Recent Activity Log", 10, 110);
+    
+    let y = 120;
+    mockActivities.slice().reverse().slice(0, 10).forEach((activity) => {
+        doc.setFontSize(10);
+        const line = `${activity.date}: ${activity.metric} - ${activity.value}`;
+        doc.text(line, 10, y);
+        y += 8;
+    });
+    
+    doc.save("pulse_health_report.pdf");
+    showModal('Report Downloaded', 'Your detailed health PDF report has been generated.', 'OK');
 }
 
 function reportAction(action) {
@@ -1311,78 +1304,33 @@ function showWaterQualityModal() {
     showModal('Water Quality Settings', 'Opening settings to customize water quality monitoring and hydration reminders based on local data.', 'Customize');
 }
 
-function showGenomicInsightsModal() {
-     if (!isLoggedIn) {
-        showAuthModal('login');
-        return;
-    }
-    const content = `
-        <button onclick="hideModal()" class="float-right text-gray-400 hover:text-white text-3xl leading-none" aria-label="Close genomic insights modal">&times;</button>
-        <h3 class="text-2xl font-bold mb-4" style="color: var(--text-primary);"><i data-lucide="dna" class="w-7 h-7 text-green-500 mr-2"></i><span>Genomic Health Insights</span></h3>
-        <p class="text-gray-400 mb-6">Your DNA suggests you are a **Fast Metabolizer** of common anti-depressants. Consult your doctor before starting new medications.</p>
-        <ul class="space-y-3 text-sm mb-6">
-            <li class="flex justify-between items-center text-gray-300">
-                <span>Personalized Diet Plan</span>
-                <button onclick="showModal('Diet Insight', 'Genetics suggest a high protein tolerance and moderate carbohydrate sensitivity.', 'View Plan')" class="color-accent-text hover:text-teal-400 font-medium">View</button>
-            </li>
-            <li class="flex justify-between items-center text-gray-300">
-                <span>Genetic Risk Score (Cardio)</span>
-                <span class="font-bold text-yellow-400">Moderate</span>
-            </li>
-        </ul>
-        <button onclick="showModal('Genomic Enrollment', 'This would typically lead to a secure form for submitting DNA data or requesting a kit.', 'Enroll Now')" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-2.5 rounded-lg transition duration-150">
-            Manage Genomic Data
-        </button>
-    `;
-    document.getElementById('universal-modal-content').innerHTML = content;
-    document.getElementById('universal-modal-content').classList.remove('modal-lg');
-    document.getElementById('universal-modal-backdrop').style.display = 'flex';
-    if (typeof lucide !== 'undefined') { lucide.createIcons(); }
-}
-
 function showMedicationAdherenceModal(filter = 'Active') {
-     if (!isLoggedIn) {
-        showAuthModal('login');
-        return;
-    }
-
+        if (!isLoggedIn) { showAuthModal('login'); return; }
     const filteredMeds = mockMedications.filter(m => filter === 'All' || m.status === filter);
-
     let listHtml = filteredMeds.map(med => `
         <li class="bg-gray-700/30 p-3 rounded-lg flex justify-between items-center border-l-4 ${med.status === 'Active' ? 'border-orange-400' : 'border-gray-500'}">
             <div class="flex-1">
                 <p class="font-bold" style="color: var(--text-primary);">${med.name}</p>
                 <p class="text-xs text-gray-400">Dose: ${med.dosage} | Freq: ${med.frequency} | Adherence: ${med.adherence}%</p>
             </div>
-            ${med.status === 'Active' ?
-                `<button onclick="logDose(${med.id})" class="bg-orange-600 hover:bg-orange-700 text-white px-3 py-1 rounded-full text-xs font-semibold">Take Dose</button>` :
-                `<button onclick="deleteMedication(${med.id})" class="text-xs text-red-500 hover:text-red-400 font-medium">Archive</button>`
-            }
+            ${med.status === 'Active' ? `<button onclick="logDose(${med.id})" class="bg-orange-600 hover:bg-orange-700 text-white px-3 py-1 rounded-full text-xs font-semibold">Take Dose</button>` : `<button onclick="deleteMedication(${med.id})" class="text-xs text-red-500 hover:text-red-400 font-medium">Archive</button>`}
         </li>
     `).join('');
-
+    
     const content = `
         <button onclick="hideModal()" class="float-right text-gray-400 hover:text-white text-3xl leading-none" aria-label="Close medication modal">&times;</button>
         <h3 class="text-2xl font-bold mb-4" style="color: var(--text-primary);"><i data-lucide="pills" class="w-7 h-7 text-orange-400 mr-2"></i><span>Medication Manager</span></h3>
-
         <div class="flex justify-between space-x-2 mb-4">
             <button onclick="showMedicationAdherenceModal('Active')" class="flex-1 px-3 py-1 text-sm rounded-lg ${filter === 'Active' ? 'bg-orange-500 text-black font-bold' : 'bg-gray-700 hover:bg-gray-600'}">Active (${mockMedications.filter(m => m.status === 'Active').length})</button>
             <button onclick="showMedicationAdherenceModal('All')" class="flex-1 px-3 py-1 text-sm rounded-lg ${filter === 'All' ? 'bg-orange-500 text-black font-bold' : 'bg-gray-700 hover:bg-gray-600'}">All (${mockMedications.length})</button>
         </div>
-
         <ul class="space-y-3 max-h-60 overflow-y-auto pr-2 mb-6">${listHtml || '<p class="text-gray-500">No medications matching this filter.</p>'}</ul>
-
-        <button onclick="showAddMedicationModal()" class="w-full color-bg-accent color-bg-accent-hover text-black font-bold py-2.5 rounded-lg transition duration-150 mb-3">
-            <i data-lucide="plus" class="w-5 h-5 inline-block mr-2"></i> Add New Prescription
-        </button>
-        <button onclick="showModal('Reminder Settings', 'Opening your smart reminder and refill management settings.', 'Configure')" class="w-full bg-gray-700 hover:bg-gray-600 text-white font-bold py-2.5 rounded-lg transition duration-150">
-            Edit Global Reminders
-        </button>
+        <button onclick="showAddMedicationModal()" class="w-full color-bg-accent color-bg-accent-hover text-black font-bold py-2.5 rounded-lg transition duration-150 mb-3"><i data-lucide="plus" class="w-5 h-5 inline-block mr-2"></i> Add New Prescription</button>
     `;
     document.getElementById('universal-modal-content').innerHTML = content;
     document.getElementById('universal-modal-content').classList.remove('modal-lg');
     document.getElementById('universal-modal-backdrop').style.display = 'flex';
-    if (typeof lucide !== 'undefined') { lucide.createIcons(); }
+    if (typeof lucide !== 'undefined') lucide.createIcons();
 }
 
 function showAddMedicationModal() {
@@ -1412,7 +1360,7 @@ function showAddMedicationModal() {
     document.getElementById('universal-modal-content').innerHTML = content;
     document.getElementById('universal-modal-content').classList.remove('modal-lg');
     document.getElementById('universal-modal-backdrop').style.display = 'flex';
-    if (typeof lucide !== 'undefined') { lucide.createIcons(); }
+    if (typeof lucide !== 'undefined') lucide.createIcons();
 }
 
 function submitNewMedication(event) {
@@ -1420,34 +1368,36 @@ function submitNewMedication(event) {
     const name = document.getElementById('med-name').value;
     const dosage = document.getElementById('med-dosage').value;
     const frequency = document.getElementById('med-freq').value;
-
+    
     mockMedications.push({
         id: nextMedicationId++,
         name: name,
-        schedule: `${frequency} Schedule`,
-        status: "Active",
-        adherence: 100,
-        nextDose: "Now",
-        dosage: dosage,
+        schedule: `${frequency} Schedule`, 
+        status: "Active", 
+        adherence: 100, 
+        nextDose: "Now", 
+        dosage: dosage, 
         frequency: frequency
     });
-
     hideModal();
+    saveData(); // Persist
     showModal('Medication Added', `**${name}** added to your active prescriptions.`, 'OK');
-    setTimeout(() => showMedicationAdherenceModal('Active'), 500);
+    setTimeout(() => showMedicationAdherenceModal('Active'), 500); 
 }
 
 function logDose(id) {
     const medIndex = mockMedications.findIndex(m => m.id === id);
     if (medIndex !== -1) {
-        mockMedications[medIndex].adherence = Math.min(100, mockMedications[medIndex].adherence + 2);
+        mockMedications[medIndex].adherence = Math.min(100, mockMedications[medIndex].adherence + 2); 
+        saveData(); // Persist update
         showModal('Dose Logged', `Successfully logged dose of **${mockMedications[medIndex].name}**. Adherence rate updated!`, 'OK');
-        setTimeout(() => showMedicationAdherenceModal('Active'), 500);
+        setTimeout(() => showMedicationAdherenceModal('Active'), 500); 
     }
 }
 
 function deleteMedication(id) {
     mockMedications = mockMedications.filter(m => m.id !== id);
+    saveData(); // Persist delete
     showModal('Medication Archived', `Medication ID **${id}** has been archived.`, 'OK');
     setTimeout(() => showMedicationAdherenceModal('All'), 500);
 }
@@ -1471,94 +1421,53 @@ function showPlannerLogModal(plannerType) {
                 <i data-lucide="hash" class="w-5 h-5"></i>
                 <input type="text" id="log-value" placeholder="Enter quantitative data" class="w-full bg-gray-800 border border-gray-700 rounded-lg p-3 text-white focus:ring-[var(--accent-color)]" required>
             </div>
-            <button type="submit" class="w-full color-bg-accent color-bg-accent-hover text-black font-bold py-2.5 rounded-lg transition duration-150 flex items-center justify-center space-x-2">
-                <i data-lucide="${icon}" class="w-5 h-5"></i>
-                <span>Log to Tracker</span>
-            </button>
+            <button type="submit" class="w-full color-bg-accent color-bg-accent-hover text-black font-bold py-2.5 rounded-lg transition duration-150 flex items-center justify-center space-x-2"><i data-lucide="${icon}" class="w-5 h-5"></i><span>Log to Tracker</span></button>
         </form>
     `;
     document.getElementById('universal-modal-content').innerHTML = content;
     document.getElementById('universal-modal-content').classList.remove('modal-lg');
     document.getElementById('universal-modal-backdrop').style.display = 'flex';
-    if (typeof lucide !== 'undefined') {
-        lucide.createIcons();
-    }
+    if (typeof lucide !== 'undefined') lucide.createIcons();
 }
 
 function submitPlannerLog(event, plannerType) {
     if (event) event.preventDefault();
     const details = document.getElementById('log-details').value;
     const value = document.getElementById('log-value').value;
-
-    mockActivities.push({
-        id: nextActivityId++,
-        metric: plannerType.toUpperCase(),
-        value: details,
-        date: new Date().toLocaleDateString(),
-        type: plannerType
-    });
-
+    mockActivities.push({ id: nextActivityId++, metric: plannerType.toUpperCase(), value: details, date: getIndianDate(), type: plannerType });
     hasNewActivity = true;
-
+    saveData(); // Persist log
     hideModal();
     showModal('Log Successful', `Successfully logged "${details} (${value})" to your ${plannerType} tracker. Progress updated!`, 'Great!');
-
     calculateAndRenderScores();
     openPlanner(plannerType);
 }
 
 function openPlanner(plannerName) {
-    if (plannerName === 'Content Library') {
-        showModal('Content Library', 'Accessing the curated library of health articles and videos verified by experts. This takes you to our blog and resources section.', 'Browse Content');
-        return;
-    }
-
     const titleElement = document.getElementById('planner-title');
     const tasksElement = document.getElementById('planner-tasks');
     const addTaskButton = document.getElementById('add-task-button');
     const plannerCardIcon = plannerName === 'Nutrition' ? 'apple' : 'activity';
     const aiToolsCard = document.getElementById('ai-planner-tools-card');
 
-
     titleElement.innerHTML = `<i data-lucide="${plannerCardIcon}" class="w-9 h-9 mr-3"></i> ${plannerName} Planner`;
     addTaskButton.setAttribute('onclick', `showPlannerLogModal('${plannerName}')`);
-
+    
     let aiToolsHtml = '';
     if (plannerName === 'Nutrition') {
         aiToolsHtml = `
-            <h3 class="text-xl font-semibold mb-4 flex items-center space-x-2">
-                <i data-lucide="scan" class="w-6 h-6 text-yellow-400"></i>
-                <span>AI Meal Generation & Calorie Check</span>
-            </h3>
+            <h3 class="text-xl font-semibold mb-4 flex items-center space-x-2"><i data-lucide="scan" class="w-6 h-6 text-yellow-400"></i><span>AI Meal Generation & Calorie Check</span></h3>
             <p class="text-sm text-gray-400 mb-4">Generate 3 healthy meal ideas based on your calorie target (1800 kcal) and existing restrictions (Vegetarian, Low-Sodium).</p>
-            <div class="flex flex-col sm:flex-row gap-3">
-                <button onclick="aiPlannerAction('Generate Meal')" class="flex-1 bg-yellow-600 hover:bg-yellow-700 text-black font-bold py-2 rounded-lg transition duration-150 transform hover:scale-[1.01]">
-                    Generate 3-Day Meal Plan
-                </button>
-                <button onclick="aiPlannerAction('Calorie Check')" class="flex-1 bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 rounded-lg transition duration-150 transform hover:scale-[1.01]">
-                    Calorie/Macro Audit
-                </button>
-            </div>
+            <div class="flex flex-col sm:flex-row gap-3"><button onclick="aiPlannerAction('Generate Meal')" class="flex-1 bg-yellow-600 hover:bg-yellow-700 text-black font-bold py-2 rounded-lg transition duration-150 transform hover:scale-[1.01]">Generate 3-Day Meal Plan</button><button onclick="aiPlannerAction('Calorie Check')" class="flex-1 bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 rounded-lg transition duration-150 transform hover:scale-[1.01]">Calorie/Macro Audit</button></div>
         `;
     } else if (plannerName === 'Workout') {
-         aiToolsHtml = `
-            <h3 class="text-xl font-semibold mb-4 flex items-center space-x-2">
-                <i data-lucide="activity" class="w-6 h-6 text-yellow-400"></i>
-                <span>AI Workout Optimization</span>
-            </h3>
+            aiToolsHtml = `
+            <h3 class="text-xl font-semibold mb-4 flex items-center space-x-2"><i data-lucide="activity" class="w-6 h-6 text-yellow-400"></i><span>AI Workout Optimization</span></h3>
             <p class="text-sm text-gray-400 mb-4">Analyze your recent performance data to suggest optimal weight, reps, and rest times for your next session (Target: Strength Gain).</p>
-            <div class="flex flex-col sm:flex-row gap-3">
-                <button onclick="aiPlannerAction('Optimize Workout')" class="flex-1 bg-yellow-600 hover:bg-yellow-700 text-black font-bold py-2 rounded-lg transition duration-150 transform hover:scale-[1.01]">
-                    Optimize Today's Routine
-                </button>
-                <button onclick="aiPlannerAction('Injury Prevention')" class="flex-1 bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 rounded-lg transition duration-150 transform hover:scale-[1.01]">
-                    Injury Risk Assessment
-                </button>
-            </div>
+            <div class="flex flex-col sm:flex-row gap-3"><button onclick="aiPlannerAction('Optimize Workout')" class="flex-1 bg-yellow-600 hover:bg-yellow-700 text-black font-bold py-2 rounded-lg transition duration-150 transform hover:scale-[1.01]">Optimize Today's Routine</button><button onclick="aiPlannerAction('Injury Prevention')" class="flex-1 bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 rounded-lg transition duration-150 transform hover:scale-[1.01]">Injury Risk Assessment</button></div>
         `;
     }
     aiToolsCard.innerHTML = aiToolsHtml;
-
 
     const tasks = plannerName === 'Nutrition' ? NUTRITION_TASKS : WORKOUT_TASKS;
     tasksElement.innerHTML = tasks.map((task, index) => `
@@ -1569,17 +1478,15 @@ function openPlanner(plannerName) {
         </li>
     `).join('');
 
-
     showView('planner');
     setTimeout(() => renderPlannerChart(plannerName), 100);
-
-    if (typeof lucide !== 'undefined') { lucide.createIcons(); }
+    if (typeof lucide !== 'undefined') lucide.createIcons();
 }
 
 function toggleTaskCompletion(plannerType, index) {
     const tasks = plannerType === 'Nutrition' ? NUTRITION_TASKS : WORKOUT_TASKS;
     tasks[index].completed = !tasks[index].completed;
-    openPlanner(plannerType);
+    openPlanner(plannerType); 
     showModal('Task Update', `Task marked as **${tasks[index].completed ? 'complete' : 'incomplete'}**. Good job!`, 'OK');
 }
 
@@ -1590,29 +1497,72 @@ function aiPlannerAction(action) {
 
 function generateCustomSession() {
     hideModal();
-    showModal('Custom Session Generated', 'Your personalized 15-minute yoga flow targeting **Hip Flexibility and Stress Reduction** has been generated and added to your tasks list.', 'Start Session');
+    const content = `
+        <button onclick="hideModal()" class="float-right text-gray-400 hover:text-white text-3xl leading-none" aria-label="Close session generator">&times;</button>
+        <h3 class="text-2xl font-bold mb-4" style="color: var(--text-primary);">Your Personalized Flow</h3>
+        <p class="text-gray-400 mb-4">Based on your activity levels, here is a 15-minute hip-opening routine:</p>
+        <ul class="space-y-2 mb-6 text-sm text-gray-300">
+            <li class="flex items-center"><i data-lucide="check" class="w-4 h-4 mr-2 text-green-400"></i> Child's Pose (2 mins)</li>
+            <li class="flex items-center"><i data-lucide="check" class="w-4 h-4 mr-2 text-green-400"></i> Cat-Cow Stretch (3 mins)</li>
+            <li class="flex items-center"><i data-lucide="check" class="w-4 h-4 mr-2 text-green-400"></i> Pigeon Pose (5 mins/side)</li>
+            <li class="flex items-center"><i data-lucide="check" class="w-4 h-4 mr-2 text-green-400"></i> Savasana (5 mins)</li>
+        </ul>
+        <button onclick="hideModal(); startSession('Custom Hip Flow', 15)" class="w-full bg-yellow-600 hover:bg-yellow-700 text-black font-bold py-2.5 rounded-lg transition duration-150">Start This Session</button>
+    `;
+    document.getElementById('universal-modal-content').innerHTML = content;
+        document.getElementById('universal-modal-content').classList.remove('modal-lg');
+    document.getElementById('universal-modal-backdrop').style.display = 'flex';
+    if (typeof lucide !== 'undefined') lucide.createIcons();
 }
 
-function startSession(sessionName) {
-    showModal('Starting Session', `Loading **${sessionName}**. Please ensure audio is turned on. Enjoy your moment of mindfulness.`, 'Begin');
-    setTimeout(() => {
-        logMeditation(sessionName);
-    }, 5000);
+function startSession(sessionName, duration = 5) {
+    hideModal();
+    
+    // Build Timer Modal Content
+    const content = `
+        <div class="text-center">
+            <h3 class="text-2xl font-bold mb-2 text-white">${sessionName}</h3>
+            <p class="text-gray-400 mb-6">Focus on your breathing...</p>
+            
+            <div class="relative w-40 h-40 mx-auto mb-6 flex items-center justify-center">
+                <div class="absolute inset-0 rounded-full border-4 border-gray-700"></div>
+                <div class="absolute inset-0 rounded-full border-4 border-indigo-500 border-t-transparent animate-spin" style="animation-duration: 3s;"></div>
+                <div class="text-4xl font-mono font-bold text-white z-10" id="timer-display">${duration}:00</div>
+            </div>
+            
+            <div class="flex justify-center space-x-4">
+                    <button onclick="hideModal()" class="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-6 rounded-lg">End Session</button>
+            </div>
+        </div>
+    `;
+    
+    document.getElementById('universal-modal-content').innerHTML = content;
+    document.getElementById('universal-modal-backdrop').style.display = 'flex';
+
+    let timeLeft = duration * 60;
+    const timerDisplay = document.getElementById('timer-display');
+    
+    if(timerInterval) clearInterval(timerInterval);
+    
+    timerInterval = setInterval(() => {
+        const minutes = Math.floor(timeLeft / 60);
+        const seconds = timeLeft % 60;
+        timerDisplay.textContent = `${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
+        
+        if (timeLeft <= 0) {
+            clearInterval(timerInterval);
+            hideModal();
+            logMeditation(sessionName);
+        }
+        timeLeft--;
+    }, 1000);
 }
 
 function logMeditation(sessionName = 'Manual Mindfulness') {
-    mockActivities.push({
-        id: nextActivityId++,
-        metric: 'MEDITATION',
-        value: sessionName.includes('Deep Sleep') ? '10 minutes' : '5-15 minutes',
-        date: new Date().toLocaleDateString(),
-        type: 'Mindfulness'
-    });
-
+    mockActivities.push({ id: nextActivityId++, metric: 'MEDITATION', value: sessionName.includes('Deep Sleep') ? '10 minutes' : '5-15 minutes', date: getIndianDate(), type: 'Mindfulness' });
     hasNewActivity = true;
-
-    showModal('Session Logged', `**${sessionName}** successfully logged to your activity history. Your stress score will be updated!`, 'View Progress');
-
+    saveData(); // Persist
+    showModal('Session Complete', `Great job! **${sessionName}** has been logged. Your stress score will improve.`, 'View Progress');
     calculateAndRenderScores();
 }
 
@@ -1627,39 +1577,16 @@ function showSpecialistFinderModal() {
         <h3 class="text-2xl font-bold mb-4 text-white flex items-center space-x-2"><i data-lucide="user-search" class="w-7 h-7 text-indigo-400"></i><span>Find a Specialist</span></h3>
         <p class="text-gray-400 mb-6">Enter your criteria to find available mental health or medical specialists matching your needs.</p>
         <form onsubmit="searchSpecialists(event)" class="space-y-4">
-            <div class="input-group">
-                <label for="search-specialty" class="block text-sm font-medium mb-1">Type of Specialist</label>
-                <i data-lucide="user-plus" class="w-5 h-5"></i>
-                <select id="search-specialty" class="w-full bg-gray-800 border border-gray-700 rounded-lg p-3 text-white focus:ring-[var(--accent-color)]" required>
-                    <option value="psychologist">Psychologist/Therapist</option>
-                    <option value="psychiatrist">Psychiatrist</option>
-                    <option value="dermatologist">Dermatologist</option>
-                    <option value="nutritionist">Registered Nutritionist</option>
-                </select>
-            </div>
-            <div class="input-group">
-                <label for="search-insurance" class="block text-sm font-medium mb-1">Insurance/Payment</label>
-                <i data-lucide="shield-check" class="w-5 h-5"></i>
-                <select id="search-insurance" class="w-full bg-gray-800 border border-gray-700 rounded-lg p-3 text-white focus:ring-[var(--accent-color)]">
-                    <option value="private">Private Insurance</option>
-                    <option value="govt">Government Scheme</option>
-                    <option value="self">Self-Pay</option>
-                </select>
-            </div>
-            <div class="input-group">
-                <label for="search-language" class="block text-sm font-medium mb-1">Language</label>
-                <i data-lucide="globe" class="w-5 h-5"></i>
-                <input type="text" id="search-language" placeholder="e.g., Hindi, English, Spanish" class="w-full bg-gray-800 border border-gray-700 rounded-lg p-3 text-white focus:ring-[var(--accent-color)]">
-            </div>
-            <button type="submit" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2.5 rounded-lg transition duration-150">
-                Search for Availability
-            </button>
+            <div class="input-group"><label for="search-specialty" class="block text-sm font-medium mb-1">Type of Specialist</label><i data-lucide="user-plus" class="w-5 h-5"></i><select id="search-specialty" class="w-full bg-gray-800 border border-gray-700 rounded-lg p-3 text-white focus:ring-[var(--accent-color)]" required><option value="psychologist">Psychologist/Therapist</option><option value="psychiatrist">Psychiatrist</option><option value="dermatologist">Dermatologist</option><option value="nutritionist">Registered Nutritionist</option></select></div>
+            <div class="input-group"><label for="search-insurance" class="block text-sm font-medium mb-1">Insurance/Payment</label><i data-lucide="shield-check" class="w-5 h-5"></i><select id="search-insurance" class="w-full bg-gray-800 border border-gray-700 rounded-lg p-3 text-white focus:ring-[var(--accent-color)]"><option value="private">Private Insurance</option><option value="govt">Government Scheme</option><option value="self">Self-Pay</option></select></div>
+            <div class="input-group"><label for="search-language" class="block text-sm font-medium mb-1">Language</label><i data-lucide="globe" class="w-5 h-5"></i><input type="text" id="search-language" placeholder="e.g., Hindi, English, Spanish" class="w-full bg-gray-800 border border-gray-700 rounded-lg p-3 text-white focus:ring-[var(--accent-color)]"></div>
+            <button type="submit" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2.5 rounded-lg transition duration-150">Search for Availability</button>
         </form>
     `;
     document.getElementById('universal-modal-content').innerHTML = content;
     document.getElementById('universal-modal-content').classList.remove('modal-lg');
     document.getElementById('universal-modal-backdrop').style.display = 'flex';
-    if (typeof lucide !== 'undefined') { lucide.createIcons(); }
+    if (typeof lucide !== 'undefined') lucide.createIcons();
 }
 
 function searchSpecialists(event) {
@@ -1673,53 +1600,55 @@ function sendSecureMessage() {
     showModal('Secure Message', 'Simulating a secure end-to-end encrypted message form for confidential inquiries to our support team.', 'Compose Message');
 }
 
-function showCommunityPortalModal() {
-    showModal('Community Portal', 'Redirecting to the private, verified PULSE peer support forums and group chat features.', 'Go to Community');
-}
-
 function showCompliance(topic) {
     showModal(`${topic} Compliance`, `Displaying the official compliance statement for **${topic}**. We prioritize your data privacy and security.`, 'Acknowledge');
 }
 
+// Optimized Device Link Modal
 function showDeviceLinkModal() {
     const content = `
         <button onclick="hideModal()" class="float-right text-gray-400 hover:text-white text-3xl leading-none" aria-label="Close device link hub">&times;</button>
         <h3 class="text-2xl font-bold mb-4 text-white flex items-center space-x-2"><i data-lucide="link-2" class="w-7 h-7 text-green-400"></i><span>Device Link Hub</span></h3>
         <p class="text-gray-400 mb-6">Manage all linked fitness trackers, smartwatches, and health apps.</p>
-
         <div class="space-y-4">
+            <!-- Linked Devices List -->
             <div class="p-3 bg-gray-800 rounded-lg border-l-4 border-green-500">
-                <h4 class="font-bold text-white mb-2 flex items-center space-x-2"><i data-lucide="check-circle" class="w-5 h-5 text-green-500"></i><span>Linked Devices (1 Active)</span></h4>
-                <div class="flex justify-between items-center text-sm text-gray-400 p-2 bg-gray-700 rounded-md">
-                    <span>PULSE-SmartBand X1</span>
-                    <span class="text-green-400 font-medium flex items-center"><i data-lucide="wifi" class="w-4 h-4 mr-1"></i> Syncing Now</span>
+                <h4 class="font-bold text-white mb-2 flex items-center space-x-2 text-sm uppercase tracking-wider"><i data-lucide="check-circle" class="w-4 h-4 text-green-500"></i><span>Active Connections</span></h4>
+                <div class="flex justify-between items-center text-sm text-gray-300 p-3 bg-gray-700/50 rounded-md">
+                    <div class="flex items-center space-x-3">
+                        <i data-lucide="watch" class="w-5 h-5 text-gray-400"></i>
+                        <span>FitPulse Tracker X1</span>
+                    </div>
+                    <span class="text-green-400 font-medium flex items-center text-xs bg-green-900/30 px-2 py-1 rounded-full"><i data-lucide="wifi" class="w-3 h-3 mr-1"></i> Syncing</span>
                 </div>
             </div>
-
+            
+            <!-- New Connections -->
             <div class="p-3 bg-gray-800 rounded-lg">
-                <h4 class="font-bold text-white mb-2 flex items-center space-x-2"><i data-lucide="watch" class="w-5 h-5 text-gray-400"></i><span>Connect a New Device</span></h4>
-                <div class="grid grid-cols-3 gap-3">
-                    <button onclick="simulateDeviceLink('Google Fit')" class="bg-gray-700 hover:bg-gray-600 text-white text-sm py-2 rounded-lg transition duration-150">Google Fit</button>
-                    <button onclick="simulateDeviceLink('Apple Health')" class="bg-gray-700 hover:bg-gray-600 text-white text-sm py-2 rounded-lg transition duration-150">Apple Health</button>
-                    <button onclick="simulateDeviceLink('Garmin')" class="bg-gray-700 hover:bg-gray-600 text-white text-sm py-2 rounded-lg transition duration-150">Garmin</button>
+                <h4 class="font-bold text-white mb-2 flex items-center space-x-2 text-sm uppercase tracking-wider"><i data-lucide="plus-circle" class="w-4 h-4 text-gray-400"></i><span>Add New Source</span></h4>
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <button onclick="simulateDeviceLink('Google Fit')" class="bg-gray-700 hover:bg-gray-600 text-white text-sm py-3 rounded-lg transition duration-150 flex flex-col items-center justify-center gap-2 border border-gray-600">
+                        <i data-lucide="activity" class="w-5 h-5"></i> Google Fit
+                    </button>
+                    <button onclick="simulateDeviceLink('Apple Health')" class="bg-gray-700 hover:bg-gray-600 text-white text-sm py-3 rounded-lg transition duration-150 flex flex-col items-center justify-center gap-2 border border-gray-600">
+                        <i data-lucide="heart" class="w-5 h-5"></i> Apple Health
+                    </button>
+                    <button onclick="simulateDeviceLink('Garmin')" class="bg-gray-700 hover:bg-gray-600 text-white text-sm py-3 rounded-lg transition duration-150 flex flex-col items-center justify-center gap-2 border border-gray-600">
+                        <i data-lucide="map" class="w-5 h-5"></i> Garmin
+                    </button>
                 </div>
             </div>
 
-            <button onclick="hideModal(); showDataPermissionsModal()" class="w-full bg-yellow-600 hover:bg-yellow-700 text-black font-bold py-2.5 rounded-lg transition duration-150 flex items-center justify-center space-x-2">
-                <i data-lucide="key" class="w-5 h-5"></i>
-                <span>Manage Data Permissions</span>
-            </button>
-
-            <button onclick="hideModal(); showManualDataImportModal()" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2.5 rounded-lg transition duration-150 flex items-center justify-center space-x-2">
-                <i data-lucide="upload-cloud" class="w-5 h-5"></i>
-                <span>Import Data File Manually</span>
-            </button>
+            <div class="flex gap-3 mt-2">
+                <button onclick="hideModal(); showDataPermissionsModal()" class="flex-1 bg-yellow-600 hover:bg-yellow-700 text-black font-bold py-2.5 rounded-lg transition duration-150 flex items-center justify-center space-x-2 text-sm"><i data-lucide="key" class="w-4 h-4"></i><span>Permissions</span></button>
+                <button onclick="hideModal(); showManualDataImportModal()" class="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2.5 rounded-lg transition duration-150 flex items-center justify-center space-x-2 text-sm"><i data-lucide="upload-cloud" class="w-4 h-4"></i><span>Import File</span></button>
+            </div>
         </div>
     `;
     document.getElementById('universal-modal-content').innerHTML = content;
     document.getElementById('universal-modal-content').classList.remove('modal-lg');
     document.getElementById('universal-modal-backdrop').style.display = 'flex';
-    if (typeof lucide !== 'undefined') { lucide.createIcons(); }
+    if (typeof lucide !== 'undefined') lucide.createIcons();
 }
 
 function showTypingIndicator() {
@@ -1757,6 +1686,33 @@ function addMessage(text, sender) {
     chatHistory.scrollTop = chatHistory.scrollHeight;
 }
 
+// --- NEW: Client-Side Context RAG ---
+function getUserContext() {
+    // Retrieve recent 5 activities
+    const recentLogs = mockActivities
+        .slice()
+        .reverse()
+        .slice(0, 5)
+        .map(a => `${a.date}: ${a.metric} - ${a.value}`)
+        .join('; ');
+        
+    // Retrieve meds
+    const meds = mockMedications
+        .map(m => `${m.name} (${m.status}, ${m.adherence}% adherence)`)
+        .join(', ');
+        
+    // Retrieve goals
+    const goals = mockGoals.map(g => `${g.name}: ${g.current}/${g.target}`).join(', ');
+
+    return `USER HEALTH CONTEXT (RAG DATA):
+    - Recent Activity Logs: [${recentLogs}]
+    - Medications: [${meds}]
+    - Active Goals: [${goals}]
+    - Current Wellness Scores: Activity(${healthScores.activity}), Sleep(${healthScores.sleep}), Stress(${healthScores.stress}).
+    
+    Use this specific data to answer the user's questions personally. If they ask about fatigue, check sleep/iron. If they ask about progress, check goals.`;
+}
+
 async function sendChat(event, voiceInput = null) {
     if (event) event.preventDefault();
 
@@ -1778,7 +1734,7 @@ async function sendChat(event, voiceInput = null) {
                     { text: userText },
                     {
                         inlineData: {
-                            mimeType: "image/png",
+                            mimeType: "image/png", 
                             data: base64ImageFile
                         }
                     }
@@ -1787,23 +1743,25 @@ async function sendChat(event, voiceInput = null) {
             base64ImageFile = null;
             showModal('Image Used', 'The uploaded image has been sent with your last message and cleared for the next chat.', 'OK');
         }
-
+        
+        // --- CONTEXT INJECTION ---
+        const systemContext = getUserContext();
+        
         const payload = {
             contents: contents,
             tools: [{ "google_search": {} }],
             systemInstruction: {
-                parts: [{ text: `You are PULSE AI, a friendly, knowledgeable, and privacy-conscious health assistant.
-                    Your goal is to provide helpful, non-diagnostic guidance based on general knowledge and the user's mock health data (Wellness Score: ${document.getElementById('overall-score')?.textContent || 88}/100, Activity: ${healthScores.activity}, Stress: ${healthScores.stress}).
-                    If the user asks for sensitive data or diagnosis, remind them to consult a medical professional. Keep responses concise and supportive.`
+                parts: [{ text: `You are PULSE AI, a friendly, knowledgeable, and privacy-conscious health assistant. 
+                    ${systemContext}
+                    If the user asks for sensitive data or diagnosis, remind them to consult a medical professional. Keep responses concise and supportive.` 
                 }]
             },
         };
-
+        
         const model = "gemini-2.5-flash-preview-09-2025";
         const apiUrl = geminiUrl(model);
-
-        let responseJson = null;
-        responseJson = await fetchWithRetry(apiUrl, {
+        
+        let responseJson = await fetchWithRetry(apiUrl, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
@@ -1823,15 +1781,15 @@ async function sendChat(event, voiceInput = null) {
                         title: attribution.web?.title,
                     }))
                     .filter(source => source.uri && source.title);
-
+                
                 if (sources.length > 0) {
                     aiText += "\n\n***\n**Sources:**\n";
                     sources.forEach((s, index) => {
-                        aiText += `[${index + 1}. ${s.title}](${s.uri})\n`;
+                        aiText += `[${index + 1}. ${s.title}](${s.uri})\n`; 
                     });
                 }
             }
-
+            
             removeTypingIndicator();
             addMessage(aiText, 'ai');
 
@@ -1841,7 +1799,7 @@ async function sendChat(event, voiceInput = null) {
         }
 
     } catch (error) {
-        console.error("Gemini API call failed:", error);
+        console.error("failed:", error);
         removeTypingIndicator();
         addMessage(`An error occurred while connecting to the AI assistant: ${error.message}. Please check your connection.`, 'ai');
     }
