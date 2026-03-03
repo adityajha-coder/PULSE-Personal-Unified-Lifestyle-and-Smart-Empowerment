@@ -3,29 +3,36 @@
 
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="theme-color" content="#0d1117">
+    <meta name="description" content="PULSE: Personal Unified Lifestyle and Smart Empowerment Health Dashboard">
+    
+    <!-- PWA Manifest Link -->
+    <link rel="manifest" href="manifest.json">
     <link rel="shortcut icon" href="pulse_favicon_ultimate.svg" type="image/x-icon">
+    <link rel="apple-touch-icon" href="pulse_favicon_ultimate.svg">
+
     <title>PULSE: Personal Unified Lifestyle and Smart Empowerment</title>
     
+    <!-- External Libraries -->
     <!-- Load Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
-    
     <!-- Load Inter Font -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
-    
     <!-- Load Lucide Icons -->
-    <script type="module" src="https://cdn.jsdelivr.net/npm/lucide@latest/dist/umd/lucide.js"></script>
-    
+    <script src="https://cdn.jsdelivr.net/npm/lucide@latest/dist/umd/lucide.js"></script>
     <!-- Load Chart.js for visualization -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
+    <!-- Load jsPDF for PDF generation -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     
-    <!-- Load Custom Styles -->
-    <link rel="stylesheet" href="style.css">
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="styles.css">
 </head>
 
 <body>
 
-    <!-- Header Navigation -->
+    <!-- Header Navigation (Desktop Top Bar / Mobile Logo only) -->
     <header class="header-bg sticky top-0 z-40 shadow-xl border-b" style="border-color: var(--input-border);">
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div class="flex justify-between items-center h-20">
@@ -41,15 +48,17 @@
 
                 <!-- Navigation Links (Desktop) -->
                 <nav class="hidden md:flex items-center space-x-6 text-sm font-medium">
-                    
                     <div class="flex items-center space-x-4">
                         <a href="#" onclick="showView('home')" class="hover:text-white transition duration-150 text-gray-400">Home</a>
-                        <a href="#" onclick="showView('dashboard')" class="hover:text-white transition duration-150 text-gray-400">Dashboard</a>
-                        <a href="#" onclick="showView('booking')" class="hover:text-white transition duration-150 text-gray-400">Booking</a>
-                        <a href="#" onclick="showView('tools')" class="hover:text-white transition duration-150 text-gray-400">Tools</a>
-                        <a href="#" onclick="showView('environmental')" class="hover:text-white transition duration-150 text-gray-400">Environment</a>
-                        <a href="#" onclick="showView('wellness')" class="hover:text-white transition duration-150 text-gray-400">Wellness</a>
-                        <a href="#" onclick="showView('connect')" class="hover:text-white transition duration-150 text-gray-400">Connect</a>
+                        <!-- Protected Navigation Items -->
+                        <div id="desktop-protected-nav" class="hidden flex space-x-4">
+                            <a href="#" onclick="showView('dashboard')" class="hover:text-white transition duration-150 text-gray-400">Dashboard</a>
+                            <a href="#" onclick="showView('booking')" class="hover:text-white transition duration-150 text-gray-400">Booking</a>
+                            <a href="#" onclick="showView('tools')" class="hover:text-white transition duration-150 text-gray-400">Tools</a>
+                            <a href="#" onclick="showView('environmental')" class="hover:text-white transition duration-150 text-gray-400">Environment</a>
+                            <a href="#" onclick="showView('wellness')" class="hover:text-white transition duration-150 text-gray-400">Wellness</a>
+                            <a href="#" onclick="showView('connect')" class="hover:text-white transition duration-150 text-gray-400">Connect</a>
+                        </div>
                     </div>
                     
                     <button onclick="showView('subscription')" class="px-3 py-1 text-sm font-semibold rounded-full bg-yellow-600 hover:bg-yellow-500 text-black transition duration-150 shadow-md flex items-center space-x-1 transform hover:scale-[1.05]">
@@ -59,28 +68,19 @@
 
                 <!-- Action Buttons -->
                 <div class="flex items-center space-x-6">
-
                     <div class="flex items-center space-x-4">
-
-                        <!-- Settings Button -->
                         <button onclick="showSettingsModal()" title="Settings" class="p-2 rounded-full text-gray-400 hover:bg-gray-700 transition duration-150 transform hover:scale-110">
                             <i data-lucide="settings" class="w-5 h-5"></i>
                         </button>
-                        
-                        <!-- Quick link to Device Hub -->
-                        <button onclick="showDeviceLinkModal()" title="Link Smart Device" class="p-2 rounded-full text-green-400 hover:bg-gray-700 transition duration-150 transform hover:scale-110 hidden sm:block">
+                        <button onclick="showDeviceLinkModal()" id="desktop-device-btn" title="Link Smart Device" class="hidden p-2 rounded-full text-green-400 hover:bg-gray-700 transition duration-150 transform hover:scale-110 sm:block">
                             <i data-lucide="watch" class="w-5 h-5"></i>
                         </button>
-
-                        <!-- SOS Button -->
                         <button onclick="showMentalHealthCrisisModal()" title="Emergency Crisis Intervention" class="flex-shrink-0 bg-red-600 hover:bg-red-700 p-2 rounded-full transition duration-150 shadow-lg transform hover:scale-110" aria-label="Emergency Crisis Intervention">
                             <i data-lucide="alert-triangle" class="w-5 h-5 text-white"></i>
                         </button>
                     </div>
 
-                    <!-- User/Auth Group -->
                     <div class="hidden md:flex items-center space-x-6">
-                        <!-- User Greeting and Logout (Dynamically Managed) -->
                         <div id="user-info" class="hidden items-center space-x-3 text-sm font-medium">
                             <span id="user-greeting" class="text-gray-400 font-semibold">Welcome Back!</span>
                             <button onclick="signOutUser()" class="flex-shrink-0 px-3 py-1 text-xs font-semibold rounded-full text-red-300 border border-red-600 hover:bg-red-900 transition duration-150" aria-label="Sign Out">
@@ -88,7 +88,6 @@
                             </button>
                         </div>
 
-                        <!-- Login/Sign Up Buttons (Dynamically Managed) -->
                         <div id="auth-buttons" class="flex items-center space-x-4">
                             <button onclick="showAuthModal('login')" class="px-4 py-2 text-sm font-semibold rounded-full text-gray-200 border border-gray-600 hover:bg-gray-700 transition duration-150 shadow-md transform hover:scale-[1.05]" aria-label="Login">
                                 Login
@@ -98,30 +97,12 @@
                             </button>
                         </div>
                     </div>
-
-                    <!-- Mobile Menu Button -->
-                    <button class="md:hidden p-2 rounded-lg hover:bg-gray-700" onclick="toggleMobileMenu()" aria-label="Toggle Mobile Menu">
-                        <i data-lucide="menu" class="w-6 h-6 text-gray-300"></i>
-                    </button>
+                    
+                    <!-- Mobile Auth buttons (shown if not logged in) -->
+                    <div class="md:hidden flex items-center">
+                        <button onclick="showAuthModal('login')" class="text-sm font-bold color-accent-text" id="mobile-login-btn">Login</button>
+                    </div>
                 </div>
-            </div>
-        </div>
-
-        <!-- Mobile Menu (Hidden by default) -->
-        <div id="mobile-menu" class="hidden md:hidden pb-4 px-4 header-bg border-t" style="border-color: var(--input-border);">
-            <div class="flex flex-col space-y-2 pt-2 text-center">
-                <a href="#" onclick="showView('home'); toggleMobileMenu();" class="py-2 text-gray-300 hover:bg-gray-700 rounded-md">Home</a>
-                <a href="#" onclick="showView('dashboard'); toggleMobileMenu();" class="py-2 text-gray-300 hover:bg-gray-700 rounded-md">Dashboard</a>
-                <a href="#" onclick="showView('booking'); toggleMobileMenu();" class="py-2 text-gray-300 hover:bg-gray-700 rounded-md">Booking</a>
-                <a href="#" onclick="showView('tools'); toggleMobileMenu();" class="py-2 text-gray-300 hover:bg-gray-700 rounded-md">Tools</a>
-                <a href="#" onclick="showView('environmental'); toggleMobileMenu();" class="py-2 text-gray-300 hover:bg-gray-700 rounded-md">Environmental</a>
-                <a href="#" onclick="showView('wellness'); toggleMobileMenu();" class="py-2 text-gray-300 hover:bg-gray-700 rounded-md">Wellness</a>
-                <a href="#" onclick="showView('connect'); toggleMobileMenu();" class="py-2 text-gray-300 hover:bg-gray-700 rounded-md">Connect</a>
-                <a href="#" onclick="showView('subscription'); toggleMobileMenu();" class="py-2 text-yellow-500 hover:bg-gray-700 rounded-md flex items-center justify-center space-x-2">
-                    <i data-lucide="crown" class="w-4 h-4 text-yellow-500"></i><span>Premium</span>
-                </a>
-                <button onclick="showAuthModal('login'); toggleMobileMenu();" class="py-2 text-gray-300 hover:bg-gray-700 rounded-md border-t border-gray-800 mt-2">Login</button>
-                <button onclick="showAuthModal('signup'); toggleMobileMenu();" class="color-bg-accent color-bg-accent-hover text-black font-semibold rounded-md">Sign Up</button>
             </div>
         </div>
     </header>
@@ -131,8 +112,7 @@
         <!-- Home View -->
         <div id="home-view" class="view active">
             <section class="text-center pt-16 pb-20 relative overflow-hidden">
-                <!-- Background Blob/Gradient Effect -->
-                <div class="absolute inset-0 z-0 opacity-10" style="background: radial-gradient(circle at 10% 90%, #2dd4bf50, transparent 50%), radial-gradient(circle at 90% 10%, #4f46e550, transparent 50);"></div>
+                <div class="absolute inset-0 z-0 opacity-10" style="background: radial-gradient(circle at 10% 90%, #2dd4bf50, transparent 50%), radial-gradient(circle at 90% 10%, #4f46e550, transparent 50%);"></div>
 
                 <div class="relative z-10">
                     <h1 class="text-5xl md:text-7xl font-extrabold mb-4 leading-tight" style="color: var(--text-primary);">
@@ -142,17 +122,23 @@
                         Unify your health tracking, connect with experts, and leverage AI insights for smarter, healthier living.
                     </p>
 
-                    <!-- CTA Buttons -->
                     <div class="flex justify-center space-x-4 mb-16">
                         <button onclick="showAuthModal('signup')" class="color-bg-accent color-bg-accent-hover text-black font-extrabold py-3 px-8 rounded-full text-lg transition duration-300 shadow-xl transform hover:scale-105">
                             Start Your Free Trial
                         </button>
-                        <button onclick="showView('dashboard')" class="bg-gray-700 hover:bg-gray-600 text-white font-semibold py-3 px-8 rounded-full text-lg transition duration-300 shadow-xl transform hover:scale-105">
-                            View Demo Dashboard
+                         <button onclick="showAuthModal('login')" class="bg-gray-700 hover:bg-gray-600 text-white font-semibold py-3 px-8 rounded-full text-lg transition duration-300 shadow-xl transform hover:scale-105">
+                            Login
+                        </button>
+                    </div>
+                    
+                    <!-- Install PWA Button (Hidden by default) -->
+                    <div id="pwa-install-container" class="mb-10 hidden">
+                         <button onclick="installApp()" class="bg-gray-800 border border-gray-600 hover:bg-gray-700 text-white font-semibold py-2 px-6 rounded-full text-sm transition duration-300 flex items-center justify-center space-x-2 mx-auto">
+                            <i data-lucide="download-cloud" class="w-4 h-4 text-accent-teal"></i>
+                            <span>Install App</span>
                         </button>
                     </div>
 
-                    <!-- Enhanced Wellness Score Teaser (Visible only if logged in) -->
                     <div id="home-wellness-teaser" onclick="showView('dashboard')" class="cursor-pointer card p-6 md:p-8 inline-block transform hover:scale-[1.03] transition duration-300 border-2 border-accent-teal shadow-2xl w-full max-w-2xl mt-10 animated-border-card" style="display: none;">
                         <div class="flex items-center justify-between">
                             <div class="flex items-center space-x-4">
@@ -168,44 +154,16 @@
                             </div>
                         </div>
                     </div>
-
-                    <!-- Feature Grid Preview -->
-                    <div class="mt-20 grid grid-cols-2 md:grid-cols-4 gap-6 text-center max-w-6xl mx-auto">
-                        <div onclick="openPlanner('Nutrition')" class="cursor-pointer p-4 card hover:border-accent-teal border border-transparent transition duration-300">
-                            <i data-lucide="apple" class="h-8 w-8 mx-auto color-accent-text mb-2"></i>
-                            <p class="text-sm font-semibold" style="color: var(--text-primary);">Nutrition Plans</p>
-                        </div>
-                        <div onclick="showView('environmental')" class="cursor-pointer p-4 card hover:border-accent-teal border border-transparent transition duration-300">
-                            <i data-lucide="cloud-fog" class="h-8 w-8 mx-auto text-indigo-400 mb-2"></i>
-                            <p class="text-sm font-semibold" style="color: var(--text-primary);">Environment</p>
-                        </div>
-                        <div onclick="showView('wellness')" class="cursor-pointer p-4 card hover:border-accent-teal border border-transparent transition duration-300">
-                            <i data-lucide="dumbbell" class="h-8 w-8 mx-auto text-pink-400 mb-2"></i>
-                            <p class="text-sm font-semibold" style="color: var(--text-primary);">Wellness Studio</p>
-                        </div>
-                        <div onclick="showView('booking')" class="cursor-pointer p-4 card hover:border-accent-teal border border-transparent transition duration-300">
-                            <i data-lucide="calendar-check" class="h-8 w-8 mx-auto color-accent-text mb-2"></i>
-                            <p class="text-sm font-semibold" style="color: var(--text-primary);">Bookings</p>
-                        </div>
-                    </div>
                 </div>
             </section>
         </div>
 
-        <!-- Dashboard View -->
+        <!-- Dashboard View (OPTIMIZED) -->
         <div id="dashboard-view" class="view">
             <h2 class="text-4xl font-bold mb-6" style="color: var(--text-primary);">Your Unified Dashboard</h2>
             <p class="text-gray-400 mb-8">Personalized metrics, goals, and progress visualized in real-time.</p>
 
-            <!-- AUTH CHECKER -->
-            <div id="dashboard-auth-prompt" class="p-10 card text-center space-y-4">
-                <i data-lucide="lock" class="w-10 h-10 mx-auto text-yellow-400"></i>
-                <h3 class="text-xl font-bold" style="color: var(--text-primary);">Access Denied</h3>
-                <p class="text-gray-400">Please log in or sign up to view your personalized health dashboard and protected data.</p>
-                <button onclick="showAuthModal('login')" class="color-bg-accent color-bg-accent-hover text-black px-6 py-2 rounded-full font-bold transition duration-150">Login / Sign Up</button>
-            </div>
-
-            <div id="dashboard-content" class="space-y-6 hidden">
+            <div id="dashboard-content" class="space-y-6">
                 <!-- Dashboard Actions -->
                 <div class="flex flex-wrap gap-3 mb-8">
                     <button onclick="showEditDataModal()" class="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg text-sm font-medium transition duration-150 flex items-center space-x-2 transform hover:scale-[1.03]">
@@ -216,17 +174,14 @@
                         <i data-lucide="undo-2" class="w-4 h-4"></i>
                         <span>Undo Last Change</span>
                     </button>
-                    <button onclick="showManualDataModal()" class="color-bg-accent color-bg-accent-hover text-black rounded-lg text-sm font-bold transition duration-150 flex items-center space-x-2 transform hover:scale-[1.03]">
-                        <i data-lucide="plus" class="w-4 h-4"></i>
-                        <span>Add Data Manually</span>
-                    </button>
+                    <!-- Manual Add Data button removed here - Replaced by FAB -->
                     <button onclick="showDeviceLinkModal()" class="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-bold transition duration-150 flex items-center space-x-2 transform hover:scale-[1.03]">
                         <i data-lucide="watch" class="w-4 h-4"></i>
                         <span>Device Hub</span>
                     </button>
                 </div>
 
-                <!-- Wellness Score Overview (Dynamic Score) -->
+                <!-- Wellness Score Overview -->
                 <div class="card p-6 mb-8 border-l-4 border-accent-teal shadow-2xl">
                     <h3 class="text-2xl font-bold flex items-center space-x-3 mb-4" style="color: var(--text-primary);">
                         <i data-lucide="gauge" class="w-7 h-7 color-accent-text"></i>
@@ -257,44 +212,25 @@
                 </div>
 
                 <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                    <!-- Col 1 (2/3 width) - Charts and Activity Feed -->
+                    <!-- Col 1 (2/3 width) - Charts -->
                     <div class="lg:col-span-2 space-y-6">
-
-                        <!-- Progress Report Card (Chart Area) -->
-                        <div class="card p-6">
+                        <!-- Progress Report Card (Expanded height for visual balance) -->
+                        <div class="card p-6 h-full flex flex-col">
                             <h3 class="text-xl font-semibold mb-4 flex items-center space-x-2" style="color: var(--text-primary);">
                                 <i data-lucide="bar-chart-3" class="w-6 h-6 color-accent-text"></i>
                                 <span>Weekly Performance Chart</span>
                             </h3>
-                            <!-- CHART.JS IMPLEMENTATION -->
-                            <div style="height: 300px;">
+                            <div class="flex-grow" style="min-height: 400px;">
                                 <canvas id="weeklyPerformanceChart"></canvas>
                             </div>
-                            <!-- END CHART.JS IMPLEMENTATION -->
                             <div class="mt-4 flex justify-between items-center text-sm text-gray-400">
-                                <p>Data Range: Last 7 Days</p>
+                                <p>Data Range: Last 7 Days (Dynamic)</p>
                                 <button onclick="generateHealthReport()" class="color-accent-text hover:text-teal-400 font-medium transform hover:scale-[1.05]">Generate Detailed Report</button>
                             </div>
                         </div>
-
-                        <!-- Recent Activity Feed (With Activity Dot) -->
-                        <div class="card p-6">
-                            <h3 class="text-xl font-semibold mb-4 flex items-center space-x-2" style="color: var(--text-primary);">
-                                <div id="activity-dot" class="activity-dot"></div>
-                                <i data-lucide="bolt" class="w-6 h-6 color-accent-text"></i>
-                                <span>Recent Activity Feed</span>
-                            </h3>
-                            <ul class="space-y-3">
-                                <!-- Activities populated by JS -->
-                            </ul>
-                            <button onclick="showModal('Activity History', 'Loading complete history of your logged activities and device syncs.','View All')" class="mt-4 w-full text-sm font-bold color-accent-text hover:text-teal-400 transform hover:scale-[1.05]">
-                                View Full History
-                            </button>
-                        </div>
-
                     </div>
 
-                    <!-- Col 2 (1/3 width) - Goals, Reminders, and Medication Monitoring -->
+                    <!-- Col 2 (1/3 width) - Goals and Medication Monitoring (Stacked) -->
                     <div class="lg:col-span-1 space-y-6">
 
                         <!-- Medication Adherence -->
@@ -324,26 +260,83 @@
                                 <i data-lucide="target" class="w-6 h-6 color-accent-text"></i>
                                 <span>Goal Progress</span>
                             </h3>
-                            <div class="space-y-4">
-                                <!-- Goal content populated by JS -->
-                            </div>
+                            <div id="dashboard-goals-container" class="space-y-4"></div>
                             <button onclick="showGoalManagementModal()" class="mt-4 w-full text-sm font-bold color-accent-text hover:text-teal-400 transform hover:scale-[1.05]">
                                 Customize Goals
                             </button>
                         </div>
-
-                        <!-- Quick Link to Environmental -->
-                        <div class="card p-6">
-                            <h3 class="text-xl font-semibold mb-4 flex items-center space-x-2" style="color: var(--text-primary);">
-                                <i data-lucide="cloud-fog" class="w-6 h-6 text-indigo-400"></i>
-                                <span>Environmental Quick Link</span>
-                            </h3>
-                            <p class="text-gray-400 mb-4 text-sm">View real-time air quality, pollen, and UV data.</p>
-                            <button onclick="showView('environmental')" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-2 rounded-lg transition duration-150 transform hover:scale-[1.01]">
-                                Go to Environmental Health
-                            </button>
-                        </div>
                     </div>
+                </div>
+            </div>
+            
+            <!-- Floating Action Button for Logging -->
+            <div id="fab-container" class="fab-container">
+                <div id="fab-menu" class="fab-menu">
+                     <div class="fab-item">
+                        <span class="fab-label">Log Nutrition</span>
+                        <button onclick="showPlannerLogModal('Nutrition'); toggleFabMenu();" class="fab-btn" title="Log Food"><i data-lucide="apple" class="w-5 h-5"></i></button>
+                    </div>
+                     <div class="fab-item">
+                        <span class="fab-label">Log Workout</span>
+                        <button onclick="showPlannerLogModal('Workout'); toggleFabMenu();" class="fab-btn" title="Log Workout"><i data-lucide="dumbbell" class="w-5 h-5"></i></button>
+                    </div>
+                    <div class="fab-item">
+                        <span class="fab-label">Manual Vitals</span>
+                        <button onclick="showManualDataModal(); toggleFabMenu();" class="fab-btn" title="Manual Vitals"><i data-lucide="activity" class="w-5 h-5"></i></button>
+                    </div>
+                </div>
+                <button onclick="toggleFabMenu()" class="fab-main" id="fab-main-btn" title="Quick Actions">
+                    <i data-lucide="plus" class="w-8 h-8 transition-transform duration-300" id="fab-icon"></i>
+                </button>
+            </div>
+        </div>
+
+        <!-- Video Consultation Room (Hidden by default) -->
+        <div id="video-consultation-view" class="view">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-2xl font-bold flex items-center" style="color: var(--text-primary);">
+                    <i data-lucide="video" class="w-7 h-7 mr-2 text-red-500"></i>
+                    <span>Secure Consultation: Dr. Sharma</span>
+                </h2>
+                <div class="flex items-center space-x-2">
+                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-900 text-red-200 animate-pulse">
+                        <span class="w-2 h-2 mr-1 bg-red-400 rounded-full"></span> Live
+                    </span>
+                    <span class="text-sm text-gray-400">00:00:15</span>
+                </div>
+            </div>
+
+            <div class="video-grid">
+                <!-- Main Doctor View -->
+                <div class="video-participant flex flex-col">
+                    <i data-lucide="user-round" class="w-32 h-32 text-gray-600 mb-4"></i>
+                    <p class="text-gray-400 font-semibold">Dr. Sharma (Cardiologist)</p>
+                    <p class="text-xs text-gray-500">Connecting...</p>
+                </div>
+                
+                <!-- Self View Overlay -->
+                <div class="video-self flex items-center justify-center">
+                    <i data-lucide="user" class="w-8 h-8 text-gray-400"></i>
+                </div>
+
+                <!-- Controls -->
+                <div class="video-controls">
+                    <button class="p-3 rounded-full bg-gray-700 hover:bg-gray-600 text-white transition"><i data-lucide="mic" class="w-5 h-5"></i></button>
+                    <button class="p-3 rounded-full bg-gray-700 hover:bg-gray-600 text-white transition"><i data-lucide="video" class="w-5 h-5"></i></button>
+                    <button class="p-3 rounded-full bg-gray-700 hover:bg-gray-600 text-white transition"><i data-lucide="message-square" class="w-5 h-5"></i></button>
+                    <button onclick="endVideoCall()" class="p-3 rounded-full bg-red-600 hover:bg-red-700 text-white transition transform hover:scale-110"><i data-lucide="phone-off" class="w-5 h-5"></i></button>
+                </div>
+            </div>
+            
+            <div class="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="card p-4">
+                    <h4 class="font-bold text-sm mb-2 text-gray-400">Quick Notes</h4>
+                    <textarea class="w-full bg-gray-800 border-none rounded-lg text-sm text-white resize-none" rows="3" placeholder="Type notes during call..."></textarea>
+                </div>
+                <div class="card p-4">
+                     <h4 class="font-bold text-sm mb-2 text-gray-400">Shared Reports</h4>
+                     <button class="text-xs bg-gray-700 hover:bg-gray-600 px-3 py-1 rounded text-white mr-2">Blood Work.pdf</button>
+                     <button class="text-xs bg-gray-700 hover:bg-gray-600 px-3 py-1 rounded text-white">ECG_Scan.jpg</button>
                 </div>
             </div>
         </div>
@@ -363,7 +356,6 @@
                     <p class="text-gray-400 mb-6">Choose the plan that fits your health monitoring needs.</p>
 
                     <div class="space-y-4">
-                        <!-- Basic Plan -->
                         <div class="score-item p-4 rounded-lg border-l-4 border-gray-500 flex justify-between items-center">
                             <div>
                                 <p class="font-bold" style="color: var(--text-primary);">Basic Access</p>
@@ -374,7 +366,6 @@
                             </button>
                         </div>
 
-                        <!-- Moderate Plan -->
                         <div class="score-item p-4 rounded-lg border-l-4 border-indigo-400 flex justify-between items-center">
                             <div>
                                 <p class="font-bold" style="color: var(--text-primary);">Moderate Access</p>
@@ -385,7 +376,6 @@
                             </button>
                         </div>
 
-                        <!-- All-Access Plan (Highlighted) -->
                         <div class="score-item p-4 rounded-lg border-l-4 border-yellow-500 flex justify-between items-center shadow-lg">
                             <div>
                                 <p class="font-bold text-yellow-500">All-Access Premium</p>
@@ -428,17 +418,17 @@
         </div>
 
 
-        <!-- Booking View -->
+        <!-- Booking View (Updated to include Specialist Finder) -->
         <div id="booking-view" class="view">
-            <h2 class="text-4xl font-bold mb-6" style="color: var(--text-primary);">Appointments and Telemedicine</h2>
-            <p class="text-gray-400 mb-8">Schedule and manage your virtual and in-person consultations with ease.</p>
+            <h2 class="text-4xl font-bold mb-6" style="color: var(--text-primary);">Consultation Hub</h2>
+            <p class="text-gray-400 mb-8">Schedule appointments, find specialists, and manage your virtual care.</p>
 
             <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
                 <!-- Appointment Booking System -->
                 <div class="card p-6">
                     <h3 class="text-2xl font-semibold mb-6 flex items-center space-x-2" style="color: var(--text-primary);">
                         <i data-lucide="calendar-plus" class="w-7 h-7 color-accent-text"></i>
-                        <span>Book a Consultation</span>
+                        <span>Book a General Consultation</span>
                     </h3>
                     <form onsubmit="bookAppointment(event)">
                         <div class="space-y-4">
@@ -457,6 +447,12 @@
                                 <label for="date" class="block text-sm font-medium mb-1">Preferred Date</label>
                                 <i data-lucide="calendar" class="w-5 h-5"></i>
                                 <input type="date" id="date" class="w-full bg-gray-700 border border-gray-600 rounded-lg p-2.5 text-white focus:ring-[var(--accent-color)]" required>
+                            </div>
+                             <div class="input-group">
+                                <label for="phone" class="block text-sm font-medium mb-1">Mobile Number (+91)</label>
+                                <i data-lucide="phone" class="w-5 h-5"></i>
+                                <input type="tel" id="phone" placeholder="+91 9876543210" class="w-full bg-gray-700 border border-gray-600 rounded-lg p-2.5 text-white focus:ring-[var(--accent-color)]" required>
+                                <p class="text-xs text-gray-500 mt-1">Format: 10 digits, optional +91 prefix</p>
                             </div>
                             <div class="input-group">
                                 <label for="type" class="block text-sm font-medium mb-1">Consultation Type</label>
@@ -479,9 +475,21 @@
                     </form>
                 </div>
 
-                <!-- Patient Portal -->
+                <!-- Specialist Finder & Patient Portal (Merged Col) -->
                 <div class="space-y-8">
-                    <!-- Secure Patient Portal -->
+                     <!-- Specialist Finder Card (Moved from Connect View) -->
+                     <div class="card p-6 bg-indigo-900/20 border border-indigo-700 hover:shadow-lg hover:border-indigo-400 transition duration-300">
+                        <h3 class="text-2xl font-semibold mb-4 flex items-center space-x-2" style="color: var(--text-primary);">
+                            <i data-lucide="user-search" class="w-7 h-7 text-indigo-400"></i>
+                            <span>Find Specific Specialist</span>
+                        </h3>
+                        <p class="text-gray-400 mb-4">Search our network for specialists based on insurance, language, or specific condition.</p>
+                        <button onclick="showSpecialistFinderModal()" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 rounded-lg transition duration-150 shadow-md flex items-center justify-center space-x-2 transform hover:scale-[1.01]">
+                            <i data-lucide="search" class="w-5 h-5"></i>
+                            <span>Search Network</span>
+                        </button>
+                    </div>
+
                     <div class="card p-6">
                         <h3 class="text-2xl font-semibold mb-4 flex items-center space-x-2" style="color: var(--text-primary);">
                             <i data-lucide="lock" class="w-7 h-7 color-accent-text"></i>
@@ -502,27 +510,12 @@
                                 <button onclick="portalAction('view lab results')" class="color-accent-text hover:text-teal-400 font-medium transform hover:scale-[1.05]">View</button>
                             </li>
                         </ul>
-                        <button onclick="portalAction('manage access')" class="mt-6 w-full bg-gray-700 hover:bg-gray-600 text-white py-2 rounded-lg transition duration-150 transform hover:scale-[1.01]">
-                            Manage Portal Access
-                        </button>
-                    </div>
-
-                    <!-- Subscription Quick Link -->
-                    <div class="card p-6 border-l-4 border-yellow-500">
-                        <h3 class="text-2xl font-semibold mb-4 flex items-center space-x-2" style="color: var(--text-primary);">
-                            <i data-lucide="crown" class="w-7 h-7 text-yellow-500"></i>
-                            <span>Premium Features</span>
-                        </h3>
-                        <p class="text-gray-400 mb-6">Unlock advanced features like priority booking, detailed reports, and AI assistance.</p>
-                        <button onclick="showView('subscription')" class="w-full bg-yellow-600 hover:bg-yellow-700 text-black font-bold py-2.5 rounded-lg transition duration-150 shadow-md transform hover:scale-[1.01]">
-                            View Plans & Upgrade
-                        </button>
                     </div>
                 </div>
             </div>
         </div>
 
-        <!-- Tools View -->
+        <!-- Tools View (OPTIMIZED) -->
         <div id="tools-view" class="view">
             <h2 class="text-4xl font-bold mb-6" style="color: var(--text-primary);">Health Tools and Smart Empowerment</h2>
             <p class="text-gray-400 mb-8">Access our personalized planners and AI assistants to manage your daily life.</p>
@@ -531,29 +524,19 @@
                 <i data-lucide="sliders" class="w-6 h-6 color-accent-text"></i>
                 <span>Health Management & Analytics</span>
             </h3>
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
-
+            <!-- Optimized grid for items -->
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-10">
                 <!-- 1. Health Reports Generator -->
                 <div class="card p-6 flex flex-col items-center text-center tool-card">
                     <i data-lucide="file-text" class="w-12 h-12 color-accent-text mb-4"></i>
                     <h3 class="text-xl font-semibold mb-2" style="color: var(--text-primary);">Health Reports Generator</h3>
-                    <p class="text-gray-400 mb-4 text-sm flex-grow">Generate and export detailed weekly and monthly health summaries for easy sharing.</p>
+                    <p class="text-gray-400 mb-4 text-sm flex-grow">Generate and download a real PDF summary of your dashboard statistics.</p>
                     <button onclick="generateHealthReport()" class="w-full color-bg-accent color-bg-accent-hover text-black py-2 rounded-lg font-bold transition duration-150 mt-4 transform hover:scale-[1.01]">
-                        Generate Report
+                        Generate PDF
                     </button>
                 </div>
 
-                <!-- 2. Genomic Health Insights -->
-                <div class="card p-6 flex flex-col items-center text-center tool-card">
-                    <i data-lucide="dna" class="w-12 h-12 text-green-500 mb-4"></i>
-                    <h3 class="text-xl font-semibold mb-2" style="color: var(--text-primary);">Genomic Health Insights</h3>
-                    <p class="text-gray-400 mb-4 text-sm flex-grow">Access personalized medicine recommendations and genetic risk reports.</p>
-                    <button onclick="showGenomicInsightsModal()" class="w-full bg-gray-700 hover:bg-gray-600 text-white py-2 rounded-lg transition duration-150 mt-4 transform hover:scale-[1.01]">
-                        View Insights
-                    </button>
-                </div>
-
-                <!-- 3. Medication Management -->
+                <!-- 2. Medication Management -->
                 <div class="card p-6 flex flex-col items-center text-center tool-card">
                     <i data-lucide="pill" class="w-12 h-12 text-orange-400 mb-4"></i>
                     <h3 class="text-xl font-semibold mb-2" style="color: var(--text-primary);">Medication Management</h3>
@@ -562,13 +545,24 @@
                         Manage Medications
                     </button>
                 </div>
+
+                 <!-- 3. BMI Calculator (NEW) -->
+                 <div class="card p-6 flex flex-col items-center text-center tool-card">
+                    <i data-lucide="calculator" class="w-12 h-12 text-indigo-400 mb-4"></i>
+                    <h3 class="text-xl font-semibold mb-2" style="color: var(--text-primary);">BMI & Calorie Calculator</h3>
+                    <p class="text-gray-400 mb-4 text-sm flex-grow">Calculate your Body Mass Index and daily caloric needs.</p>
+                    <button onclick="showBMICalculatorModal()" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-2 rounded-lg transition duration-150 mt-4 transform hover:scale-[1.01]">
+                        Calculate Now
+                    </button>
+                </div>
             </div>
 
             <h3 class="text-2xl font-bold mb-4 flex items-center space-x-2" style="color: var(--text-primary);">
                 <i data-lucide="target" class="w-6 h-6 color-accent-text"></i>
                 <span>Personal Planners & Routines</span>
             </h3>
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <!-- Optimized grid for 3 items (Removed Wellness Planner per request) -->
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
 
                 <!-- Nutrition Planner -->
                 <div class="card p-6 flex flex-col items-center text-center tool-card">
@@ -590,16 +584,6 @@
                     </button>
                 </div>
 
-                <!-- Wellness Planner -->
-                <div class="card p-6 flex flex-col items-center text-center tool-card">
-                    <i data-lucide="dumbbell" class="w-12 h-12 text-pink-400 mb-4"></i>
-                    <h3 class="text-xl font-semibold mb-2" style="color: var(--text-primary);">Yoga & Mindfulness</h3>
-                    <p class="text-gray-400 mb-4 text-sm flex-grow">Find routines, track sessions, and monitor mindfulness scores.</p>
-                    <button onclick="showView('wellness')" class="w-full bg-gray-700 hover:bg-gray-600 text-white py-2 rounded-lg transition duration-150 mt-4 transform hover:scale-[1.01]">
-                        Go to Wellness Studio
-                    </button>
-                </div>
-
                 <!-- Symptom Checker -->
                 <div class="card p-6 flex flex-col items-center text-center tool-card">
                     <i data-lucide="stethoscope" class="w-12 h-12 color-accent-text mb-4"></i>
@@ -609,20 +593,10 @@
                         Start Check
                     </button>
                 </div>
-
-                <!-- Content Library -->
-                <div class="card p-6 flex flex-col items-center text-center tool-card">
-                    <i data-lucide="book-open" class="w-12 h-12 color-accent-text mb-4"></i>
-                    <h3 class="text-xl font-semibold mb-2" style="color: var(--text-primary);">Content Library</h3>
-                    <p class="text-gray-400 mb-4 text-sm flex-grow">Articles, videos, and tips on health, fitness, and nutrition verified by experts.</p>
-                    <button onclick="openPlanner('Content Library')" class="w-full bg-gray-700 hover:bg-gray-600 text-white py-2 rounded-lg transition duration-150 mt-4 transform hover:scale-[1.01]">
-                        Browse Insights
-                    </button>
-                </div>
             </div>
         </div>
 
-        <!-- Environmental View -->
+        <!-- Environmental View (OPTIMIZED) -->
         <div id="environmental-view" class="view">
             <button onclick="showView('dashboard')" class="mb-6 px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg text-sm font-medium transition duration-150 flex items-center space-x-2 transform hover:scale-[1.03]">
                 <i data-lucide="arrow-left" class="w-4 h-4"></i>
@@ -635,7 +609,6 @@
             <p class="text-gray-400 mb-8">Real-time data and alerts regarding local air, water, and climate conditions that affect your health.</p>
 
             <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-
                 <!-- Main Environmental Metrics (2/3 width) -->
                 <div class="lg:col-span-2 space-y-6">
                     <div class="card p-6 border-l-4 border-indigo-400">
@@ -668,7 +641,6 @@
                         </div>
                     </div>
 
-                    <!-- Air Pollution Forecast -->
                     <div class="card p-6">
                         <h3 class="text-2xl font-semibold mb-4 flex items-center space-x-2" style="color: var(--text-primary);">
                             <i data-lucide="line-chart" class="w-6 h-6 text-yellow-500"></i>
@@ -694,7 +666,7 @@
                     </div>
                 </div>
 
-                <!-- Water Quality & Actions (1/3 width) -->
+                <!-- Water Quality (1/3 width) - Hyper-local removed -->
                 <div class="lg:col-span-1 space-y-6">
                     <div class="card p-6">
                         <h3 class="text-xl font-semibold mb-4 flex items-center space-x-2" style="color: var(--text-primary);">
@@ -716,18 +688,6 @@
                             Set Water Quality Reminders
                         </button>
                     </div>
-
-                    <!-- Hyper-local Water Testing -->
-                    <div class="card p-6">
-                        <h3 class="text-xl font-semibold mb-4 flex items-center space-x-2" style="color: var(--text-primary);">
-                            <i data-lucide="flask-conical" class="w-6 h-6 text-blue-400"></i>
-                            <span>Hyper-local Testing</span>
-                        </h3>
-                        <p class="text-sm text-gray-400 mb-4">Request a kit to test your tap water directly for lead, chlorine, and minerals.</p>
-                        <button onclick="showModal('Water Test Kit', 'Simulating ordering a home water test kit. Results will be uploaded directly to your PULSE profile.','Order Kit')" class="w-full bg-gray-700 hover:bg-gray-600 text-white py-2 rounded-lg transition duration-150 transform hover:scale-[1.01]">
-                            Request Test Kit
-                        </button>
-                    </div>
                 </div>
             </div>
         </div>
@@ -744,21 +704,15 @@
             <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 <!-- Planner Overview -->
                 <div class="lg:col-span-2 space-y-6">
-
-                    <!-- AI Tools Card - Dynamic Content based on planner type -->
-                    <div id="ai-planner-tools-card" class="card p-6 border-l-4 border-yellow-400">
-                        <!-- Content dynamically injected by JS -->
-                    </div>
-
+                    <!-- AI Tools Card -->
+                    <div id="ai-planner-tools-card" class="card p-6 border-l-4 border-yellow-400"></div>
 
                     <div class="card p-6">
                         <h3 class="text-xl font-semibold mb-4 flex items-center space-x-2" style="color: var(--text-primary);">
                             <i data-lucide="check-square" class="w-6 h-6 color-accent-text"></i>
                             <span>Today's Task List</span>
                         </h3>
-                        <ul id="planner-tasks" class="space-y-3 text-sm">
-                            <!-- Tasks populated by JS -->
-                        </ul>
+                        <ul id="planner-tasks" class="space-y-3 text-sm"></ul>
                         <button id="add-task-button" onclick="showPlannerLogModal('Nutrition')" class="mt-4 text-sm font-bold color-accent-text hover:text-teal-400 transform hover:scale-[1.05]">
                             Add New Task/Entry
                         </button>
@@ -769,11 +723,9 @@
                             <i data-lucide="trending-up" class="w-6 h-6 color-accent-text"></i>
                             <span>Long-Term Progress</span>
                         </h3>
-                        <!-- CHART.JS IMPLEMENTATION FOR PLANNER -->
                         <div style="height: 280px;">
                             <canvas id="longTermChart"></canvas>
                         </div>
-                        <!-- END CHART.JS IMPLEMENTATION -->
                     </div>
                 </div>
 
@@ -806,8 +758,7 @@
             <p class="text-gray-400 mb-8">Select a guided session, log your mindfulness practice, or generate a custom routine.</p>
 
             <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-
-                <!-- Personalized Session Generator -->
+                <!-- AI Session Generator -->
                 <div class="lg:col-span-3 card p-6 border-l-4 border-yellow-400 mb-6">
                     <h3 class="text-2xl font-semibold mb-4 flex items-center space-x-2" style="color: var(--text-primary);">
                         <i data-lucide="wand-2" class="w-6 h-6 text-yellow-400"></i>
@@ -820,7 +771,7 @@
                     </button>
                 </div>
 
-                <!-- Meditation/Mindfulness Section -->
+                <!-- Meditation -->
                 <div class="lg:col-span-1 space-y-6">
                     <div class="card p-6 border-l-4 border-pink-400">
                         <h3 class="text-xl font-semibold mb-4 flex items-center space-x-2" style="color: var(--text-primary);">
@@ -830,13 +781,13 @@
                         <p class="text-sm text-gray-400 mb-4">Track your sessions and improve focus with audio guides.</p>
 
                         <div class="space-y-3">
-                            <div class="score-item p-3 rounded-lg flex justify-between items-center">
+                            <div class="score-item p-3 rounded-lg">
                                 <span class="font-medium" style="color: var(--text-primary);">Deep Sleep (10 min)</span>
-                                <button onclick="startSession('Deep Sleep Meditation')" class="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-full text-sm font-semibold">Start</button>
+                                <button onclick="startSession('Deep Sleep Meditation', 10)" class="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-full text-sm font-semibold">Start</button>
                             </div>
-                            <div class="score-item p-3 rounded-lg flex justify-between items-center">
+                            <div class="score-item p-3 rounded-lg">
                                 <span class="font-medium" style="color: var(--text-primary);">Focus Boost (5 min)</span>
-                                <button onclick="startSession('Focus Boost Meditation')" class="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-full text-sm font-semibold">Start</button>
+                                <button onclick="startSession('Focus Boost Meditation', 5)" class="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-full text-sm font-semibold">Start</button>
                             </div>
                         </div>
 
@@ -847,7 +798,7 @@
                     </div>
                 </div>
 
-                <!-- Yoga Section (2/3 width) -->
+                <!-- Yoga -->
                 <div class="lg:col-span-2 space-y-6">
                     <div class="card p-6 border-l-4 border-teal-400">
                         <h3 class="text-xl font-semibold mb-4 flex items-center space-x-2" style="color: var(--text-primary);">
@@ -861,21 +812,21 @@
                                     <p class="font-bold" style="color: var(--text-primary);">Morning Flow (20 min)</p>
                                     <p class="text-sm text-gray-400">Goal: Energy & Alignment</p>
                                 </div>
-                                <button onclick="startSession('Morning Yoga Flow')" class="color-bg-accent color-bg-accent-hover text-black px-4 py-1.5 rounded-full text-sm font-semibold">Start</button>
+                                <button onclick="startSession('Morning Yoga Flow', 20)" class="color-bg-accent color-bg-accent-hover text-black px-4 py-1.5 rounded-full text-sm font-semibold">Start</button>
                             </li>
                             <li class="bg-gray-700/30 p-4 rounded-lg flex justify-between items-center hover:bg-gray-700 transition duration-150">
                                 <div>
                                     <p class="font-bold" style="color: var(--text-primary);">Office Break Stretch (5 min)</p>
                                     <p class="text-sm text-gray-400">Goal: Shoulder & Neck Relief</p>
                                 </div>
-                                <button onclick="startSession('Office Break Stretch')" class="color-bg-accent color-bg-accent-hover text-black px-4 py-1.5 rounded-full text-sm font-semibold">Start</button>
+                                <button onclick="startSession('Office Break Stretch', 5)" class="color-bg-accent color-bg-accent-hover text-black px-4 py-1.5 rounded-full text-sm font-semibold">Start</button>
                             </li>
                             <li class="bg-gray-700/30 p-4 rounded-lg flex justify-between items-center hover:bg-gray-700 transition duration-150">
                                 <div>
                                     <p class="font-bold" style="color: var(--text-primary);">Hip Opener & Flexibility (30 min)</p>
                                     <p class="text-sm text-gray-400">Goal: Deep Flexibility</p>
                                 </div>
-                                <button onclick="startSession('Hip Opener')" class="color-bg-accent color-bg-accent-hover text-black px-4 py-1.5 rounded-full text-sm font-semibold">Start</button>
+                                <button onclick="startSession('Hip Opener', 30)" class="color-bg-accent color-bg-accent-hover text-black px-4 py-1.5 rounded-full text-sm font-semibold">Start</button>
                             </li>
                         </ul>
                     </div>
@@ -884,13 +835,14 @@
         </div>
 
 
-        <!-- Connect View -->
+        <!-- Connect View (OPTIMIZED) -->
         <div id="connect-view" class="view">
             <h2 class="text-4xl font-bold mb-6" style="color: var(--text-primary);">Connect & Support</h2>
             <p class="text-gray-400 mb-8">Get instant answers and secure access to our support teams.</p>
 
+            <!-- Optimized Grid Layout -->
             <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-                <!-- 1. Smartwatch/Fitness Band Link -->
+                <!-- 1. Device Link Hub -->
                 <div class="card p-6 bg-gray-700/30 border border-gray-600 hover:shadow-lg hover:border-green-400 transition duration-300">
                     <h3 class="text-2xl font-semibold mb-4 flex items-center space-x-2" style="color: var(--text-primary);">
                         <i data-lucide="watch" class="w-7 h-7 text-green-400"></i>
@@ -903,20 +855,7 @@
                     </button>
                 </div>
 
-                <!-- 2. Specialist Consultation Finder -->
-                <div class="card p-6 bg-indigo-900/20 border border-indigo-700 hover:shadow-lg hover:border-indigo-400 transition duration-300">
-                    <h3 class="text-2xl font-semibold mb-4 flex items-center space-x-2" style="color: var(--text-primary);">
-                        <i data-lucide="stethoscope" class="w-7 h-7 text-indigo-400"></i>
-                        <span>Find Specialist</span>
-                    </h3>
-                    <p class="text-gray-400 mb-4">Quickly book virtual consultations with doctors and mental health professionals for specific concerns.</p>
-                    <button onclick="showSpecialistFinderModal()" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 rounded-lg transition duration-150 shadow-md flex items-center justify-center space-x-2 transform hover:scale-[1.01]">
-                        <i data-lucide="user-search" class="w-5 h-5"></i>
-                        <span>Connect to a Specialist</span>
-                    </button>
-                </div>
-
-                <!-- 3. AI Chatbot/Live Chat -->
+                <!-- 2. AI Chatbot -->
                 <div class="card p-6 bg-indigo-900/20 border border-indigo-700 hover:shadow-lg hover:border-accent-teal transition duration-300">
                     <h3 class="text-2xl font-semibold mb-4 flex items-center space-x-2" style="color: var(--text-primary);">
                         <i data-lucide="message-square" class="w-7 h-7 color-accent-text"></i>
@@ -929,7 +868,7 @@
                     </button>
                 </div>
 
-                <!-- 4. Secure Direct Contact -->
+                <!-- 3. Secure Direct Contact -->
                 <div class="card p-6 bg-gray-700/30 border border-gray-600 hover:shadow-lg hover:border-accent-teal transition duration-300">
                     <h3 class="text-2xl font-semibold mb-4 flex items-center space-x-2" style="color: var(--text-primary);">
                         <i data-lucide="mail" class="w-7 h-7 color-accent-text"></i>
@@ -942,21 +881,8 @@
                     </button>
                 </div>
 
-                <!-- 5. Community Forum / Peer Support -->
-                <div class="card p-6 md:col-span-2 lg:col-span-1 bg-purple-900/20 border border-purple-700 hover:shadow-lg hover:border-purple-400 transition duration-300">
-                    <h3 class="text-2xl font-semibold mb-4 flex items-center space-x-2 text-purple-400" style="color: var(--text-primary);">
-                        <i data-lucide="users" class="w-7 h-7"></i>
-                        <span>Peer Support & Forums</span>
-                    </h3>
-                    <p class="text-gray-400 mb-4">Connect with other users, find supportive groups, and discuss health challenges confidentially.</p>
-                    <button onclick="showCommunityPortalModal()" class="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 rounded-lg transition duration-150 shadow-md flex items-center justify-center space-x-2 transform hover:scale-[1.01]">
-                        <i data-lucide="users-round" class="w-5 h-5"></i>
-                        <span>Access Forum & Groups</span>
-                    </button>
-                </div>
-
-                <!-- 6. Mental Health Intervention -->
-                <div class="card p-6 md:col-span-2 border-l-4 border-red-500 bg-red-900/20 lg:col-span-3 hover:shadow-xl transition duration-300">
+                <!-- 4. Mental Health Intervention (Spans full width) -->
+                <div class="card p-6 md:col-span-2 lg:col-span-3 border-l-4 border-red-500 bg-red-900/20 hover:shadow-xl transition duration-300">
                     <h3 class="text-2xl font-semibold mb-4 flex items-center space-x-2 text-red-400" style="color: var(--text-primary);">
                         <i data-lucide="shield-alert" class="w-7 h-7"></i>
                         <span>Mental Health Crisis Support</span>
@@ -982,20 +908,17 @@
             <div class="card p-6">
                 <div id="chat-history" class="chat-container mb-4">
                     <div class="message">
-                        <div class="ai-bubble">Hello! I'm your PULSE AI Assistant. I can help you with quick health facts, data summaries, and navigating the platform. How can I assist you today?</div>
+                        <div class="ai-bubble">Hello! I'm your PULSE AI Assistant. I have access to your health history. Ask me "Why am I tired?" or "What's my iron intake like?"</div>
                     </div>
                 </div>
 
                 <form onsubmit="sendChat(event)">
                     <div class="flex space-x-3">
-                        
-                        <!-- Upload Image Button -->
                         <button type="button" onclick="document.getElementById('image-upload-input').click()" title="Upload Image for Analysis" class="bg-gray-700 hover:bg-gray-600 text-white p-3 rounded-lg font-bold transition duration-150 transform hover:scale-[1.05]" aria-label="Upload Image">
                             <i data-lucide="image" class="w-5 h-5"></i>
                         </button>
                         <input type="file" id="image-upload-input" accept="image/*" onchange="handleImageUpload(event)" style="display: none;">
 
-                        <!-- Microphone Button for Voice Input -->
                         <button type="button" id="mic-button" onclick="toggleVoiceInput()" class="bg-gray-700 hover:bg-gray-600 text-white p-3 rounded-lg font-bold transition duration-150 transform hover:scale-[1.05]" aria-label="Toggle Voice Input">
                             <i data-lucide="mic" class="w-5 h-5"></i>
                         </button>
@@ -1012,14 +935,36 @@
     </main>
 
     <!-- Chatbot Fixed Icon -->
-    <div class="chatbot-fixed">
+    <div class="chatbot-fixed" id="chatbot-fixed-btn">
         <button onclick="showView('chatbot')" class="bg-indigo-600 hover:bg-indigo-700 p-4 rounded-full transition duration-300 shadow-xl transform hover:scale-110" title="Open AI Chatbot" aria-label="Open AI Chatbot">
             <i data-lucide="message-square-text" class="w-6 h-6 text-white"></i>
         </button>
     </div>
 
-    <!-- Footer -->
-    <footer class="header-bg mt-12 py-10 border-t" style="border-color: var(--input-border);">
+    <!-- Bottom Navigation Bar (Mobile Only - Protected items hidden by default) -->
+    <nav class="md:hidden fixed bottom-0 left-0 w-full bottom-nav z-50 flex justify-around items-center h-16 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)]">
+        <button onclick="showView('home')" class="nav-item flex flex-col items-center justify-center w-full h-full text-gray-400 hover:text-[var(--accent-color)] active:text-[var(--accent-color)] transition-colors duration-200">
+            <i data-lucide="home" class="w-6 h-6 mb-1"></i>
+            <span class="text-[10px] font-medium">Home</span>
+        </button>
+        <!-- Protected Mobile Nav Items -->
+        <button onclick="showView('dashboard')" class="protected-nav-item nav-item flex flex-col items-center justify-center w-full h-full text-gray-400 hover:text-[var(--accent-color)] active:text-[var(--accent-color)] transition-colors duration-200">
+            <i data-lucide="layout-dashboard" class="w-6 h-6 mb-1"></i>
+            <span class="text-[10px] font-medium">Dashboard</span>
+        </button>
+        <button onclick="showView('tools')" class="protected-nav-item nav-item flex flex-col items-center justify-center w-full h-full text-gray-400 hover:text-[var(--accent-color)] active:text-[var(--accent-color)] transition-colors duration-200">
+            <i data-lucide="sliders" class="w-6 h-6 mb-1"></i>
+            <span class="text-[10px] font-medium">Tools</span>
+        </button>
+        <button onclick="showView('connect')" class="protected-nav-item nav-item flex flex-col items-center justify-center w-full h-full text-gray-400 hover:text-[var(--accent-color)] active:text-[var(--accent-color)] transition-colors duration-200">
+            <i data-lucide="users" class="w-6 h-6 mb-1"></i>
+            <span class="text-[10px] font-medium">Connect</span>
+        </button>
+    </nav>
+
+
+    <!-- Footer (Hidden on mobile to avoid clutter with bottom nav, or just padded) -->
+    <footer class="header-bg mt-12 py-10 border-t mb-16 md:mb-0" style="border-color: var(--input-border);">
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-sm text-gray-500">
             <div class="grid grid-cols-2 md:grid-cols-4 gap-8">
                 <div>
@@ -1053,20 +998,17 @@
         </div>
     </footer>
 
-    <!-- Universal Modal Backdrop for Messages/Forms -->
+    <!-- Universal Modal Backdrop -->
     <div id="universal-modal-backdrop" class="modal-backdrop">
-        <div id="universal-modal-content" class="modal-content">
-            <!-- Content injected by JS -->
-        </div>
+        <div id="universal-modal-content" class="modal-content"></div>
     </div>
 
-    <!-- Authentication Modal Backdrop (Login/Signup) -->
+    <!-- Auth Modal Backdrop -->
     <div id="auth-modal-backdrop" class="modal-backdrop">
         <div id="auth-modal-content" class="modal-content">
             <button onclick="hideAuthModal()" class="float-right text-gray-400 hover:text-white text-3xl leading-none" aria-label="Close authentication modal">&times;</button>
             <h3 id="auth-title" class="text-2xl font-bold mb-4" style="color: var(--text-primary);">Login</h3>
 
-            <!-- Login Form -->
             <form id="login-form" onsubmit="loginUser(event)" class="space-y-4">
                 <div class="input-group">
                     <label for="login-email" class="sr-only">Email</label>
@@ -1083,7 +1025,6 @@
                 </button>
             </form>
 
-            <!-- Sign Up Form -->
             <form id="signup-form" onsubmit="signUpUser(event)" class="space-y-4 hidden">
                 <div class="input-group">
                     <label for="signup-name" class="sr-only">Full Name</label>
@@ -1114,8 +1055,9 @@
         </div>
     </div>
     
-    <!-- Load Custom Scripts -->
+    <!-- Application Logic -->
     <script src="script.js"></script>
+
 </body>
 
 </html>
