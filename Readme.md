@@ -64,7 +64,3 @@ Charts: Chart.js
 PDF Generation: jsPDF
 
 AI: Google Gemini API
-
-License
-
-This project is open-source and available under the MIT License.
